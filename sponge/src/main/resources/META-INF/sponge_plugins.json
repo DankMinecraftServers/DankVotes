@@ -1,0 +1,35 @@
+{
+  "loader": {
+    "name": "java_plain",
+    "version": "1.0"
+  },
+  "license": "MIT",
+  "plugins": [
+    {
+      "id": "dankvotes",
+      "name": "DankVotes",
+      "version": "${project.version}",
+      "entrypoint": "com.dankmc.dankvotes.sponge.DankVotesSponge",
+      "description": "Vote rewards done right - polling (no port forwarding), Votifier v1/v2, streaks, vote parties, reminders, leaderboards.",
+      "links": {
+        "homepage": "https://dankminecraftservers.com",
+        "source": "https://github.com/DankMinecraftServers/DankVotes",
+        "issues": "https://github.com/DankMinecraftServers/DankVotes/issues"
+      },
+      "contributors": [
+        {
+          "name": "DankMinecraftServers",
+          "description": "Developer"
+        }
+      ],
+      "dependencies": [
+        {
+          "id": "spongeapi",
+          "version": "8.0.0",
+          "load-order": "after",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

@@ -8,7 +8,8 @@ import java.util.concurrent.Callable;
 /**
  * bStats metrics (https://bstats.org). Isolated in its own class so the main plugin never
  * references bStats classes directly; if they fail to load for any reason the plugin keeps
- * working without metrics.
+ * working without metrics. bStats 3.1+ detects Folia itself and never touches the Bukkit
+ * scheduler there.
  *
  * SETUP: register the plugin at https://bstats.org/getting-started to receive a numeric
  * plugin id, then set {@link #PLUGIN_ID}. While it is 0, metrics are skipped entirely.
@@ -22,8 +23,9 @@ final class MetricsHook {
 
     private MetricsHook() {}
 
-    static boolean start(final DankVotesPaper plugin) {
-        if (PLUGIN_ID <= 0) return false;
+    /** Start metrics. Returns the running instance (pass it to {@link #stop}) or null. */
+    static Object start(final DankVotesPaper plugin) {
+        if (PLUGIN_ID <= 0) return null;
         Metrics metrics = new Metrics(plugin, PLUGIN_ID);
         metrics.addCustomChart(new SimplePie("delivery_mode", new Callable<String>() {
             @Override public String call() {
@@ -41,6 +43,11 @@ final class MetricsHook {
                 return plugin.getCore() == null ? "unknown" : plugin.getCore().getPlatform().getPlatformName();
             }
         }));
-        return true;
+        return metrics;
+    }
+
+    /** Stop the bStats submit thread (it would otherwise outlive a plugin reload). */
+    static void stop(Object metrics) {
+        if (metrics instanceof Metrics) ((Metrics) metrics).shutdown();
     }
 }

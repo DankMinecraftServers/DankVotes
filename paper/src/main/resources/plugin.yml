@@ -5,13 +5,13 @@ author: DankMinecraftServers
 description: Vote rewards done right - polling (no port forwarding), Votifier v1/v2, NuVotifier hook, streaks, vote parties, reminders, leaderboards.
 website: https://dankminecraftservers.com
 
-# NOTE: api-version is intentionally OMITTED.
-# Declaring api-version (added in 1.13) makes servers older than 1.13 refuse to load
-# the plugin. Omitting it keeps us loadable on 1.8-1.12 too. Modern servers treat a
-# missing api-version as "legacy" which is harmless for a command/event plugin like this.
-#
-# folia-supported: true is REQUIRED for Folia to load the plugin at all. On servers
-# older than Folia this key is simply unknown and ignored - so it's safe everywhere.
+# api-version 1.13 marks DankVotes as a modern (non-legacy) plugin on 1.13+ servers, so they
+# skip "Legacy Material Support" and the legacy-plugin warning. Servers older than 1.13
+# ignore the key, so the same jar still loads on 1.7.10 - 1.12.2. 1.13 is the lowest value
+# every modern server accepts; a server only refuses plugins that declare a NEWER version.
+api-version: '1.13'
+
+# Required for Folia (and its forks) to load the plugin at all. Every other server ignores it.
 folia-supported: true
 
 # Load after these if present so our hooks can find them.

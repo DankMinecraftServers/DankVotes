@@ -22,11 +22,19 @@ public class Vote {
      */
     private final int voteNumber;
 
+    /** True when another DankVotes (usually a proxy) forwarded this vote here; never forwarded again. */
+    private final boolean forwarded;
+
     public Vote(String username, String serviceName, String address, long timestamp, boolean verified, long apiId) {
-        this(username, serviceName, address, timestamp, verified, apiId, 0);
+        this(username, serviceName, address, timestamp, verified, apiId, 0, false);
     }
 
     public Vote(String username, String serviceName, String address, long timestamp, boolean verified, long apiId, int voteNumber) {
+        this(username, serviceName, address, timestamp, verified, apiId, voteNumber, false);
+    }
+
+    public Vote(String username, String serviceName, String address, long timestamp, boolean verified, long apiId,
+                int voteNumber, boolean forwarded) {
         this.username = username == null ? "" : username.trim();
         this.serviceName = serviceName == null ? "" : serviceName;
         this.address = address == null ? "" : address;
@@ -34,11 +42,12 @@ public class Vote {
         this.verified = verified;
         this.apiId = apiId;
         this.voteNumber = voteNumber;
+        this.forwarded = forwarded;
     }
 
     /** Copy of this vote with the vote-number snapshot set. */
     public Vote withVoteNumber(int number) {
-        return new Vote(username, serviceName, address, timestamp, verified, apiId, number);
+        return new Vote(username, serviceName, address, timestamp, verified, apiId, number, forwarded);
     }
 
     public String getUsername()    { return username; }
@@ -48,10 +57,11 @@ public class Vote {
     public boolean isVerified()    { return verified; }
     public long getApiId()         { return apiId; }
     public int getVoteNumber()     { return voteNumber; }
+    public boolean isForwarded()   { return forwarded; }
 
     @Override
     public String toString() {
         return "Vote{user=" + username + ", service=" + serviceName + ", verified=" + verified
-            + ", apiId=" + apiId + ", n=" + voteNumber + "}";
+            + ", apiId=" + apiId + ", n=" + voteNumber + (forwarded ? ", forwarded" : "") + "}";
     }
 }

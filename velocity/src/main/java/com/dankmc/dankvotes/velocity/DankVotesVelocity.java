@@ -3,13 +3,16 @@ package com.dankmc.dankvotes.velocity;
 import com.dankmc.dankvotes.core.CommandText;
 import com.dankmc.dankvotes.core.DankVotesConfig;
 import com.dankmc.dankvotes.core.DankVotesCore;
+import com.dankmc.dankvotes.core.DefaultConfig;
 import com.dankmc.dankvotes.core.Vote;
 import com.google.inject.Inject;
+import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.permission.Tristate;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
+import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
@@ -18,7 +21,6 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -32,12 +34,13 @@ import java.util.logging.LogRecord;
  *
  * Use this on a Velocity network for network-wide vote handling: announcements,
  * streaks, /vote, /votetop, and proxy-level reward commands. For in-world rewards
- * (items, crates) run the same jar on the backend servers too.
+ * (items, crates) run the same jar on the backend servers too and turn on forwarding,
+ * which passes every vote the proxy receives on to them (Paper, Folia, Purpur, Sponge...).
  */
 @Plugin(
     id = "dankvotes",
     name = "DankVotes",
-    version = "1.0.0",
+    version = "1.1.0",
     description = "Vote rewards done right - polling, Votifier v1/v2, streaks, vote parties, reminders.",
     url = "https://dankminecraftservers.com",
     authors = {"DankMinecraftServers"}
@@ -67,15 +70,15 @@ public class DankVotesVelocity {
     public void onInit(ProxyInitializeEvent event) {
         try {
             Files.createDirectories(dataDirectory);
-            saveDefaultConfig();
+            DefaultConfig.saveIfMissing(dataDirectory.toFile(), DankVotesVelocity.class, julLogger);
             startCore();
 
             var cm = proxy.getCommandManager();
-            cm.register(cm.metaBuilder("dankvotes").aliases("dv").plugin(this).build(), new AdminCommand());
-            cm.register(cm.metaBuilder("vote").plugin(this).build(), new VoteCommand());
-            cm.register(cm.metaBuilder("votes").aliases("myvotes").plugin(this).build(), new VotesCommand());
-            cm.register(cm.metaBuilder("votetop").aliases("topvotes", "topvoters").plugin(this).build(), new VoteTopCommand());
-            cm.register(cm.metaBuilder("voteparty").aliases("vp").plugin(this).build(), new VotePartyCommand());
+            cm.register(meta(cm.metaBuilder("dankvotes").aliases("dv", "dankvote")), new AdminCommand());
+            cm.register(meta(cm.metaBuilder("vote")), new VoteCommand());
+            cm.register(meta(cm.metaBuilder("votes").aliases("myvotes")), new VotesCommand());
+            cm.register(meta(cm.metaBuilder("votetop").aliases("topvotes", "topvoters")), new VoteTopCommand());
+            cm.register(meta(cm.metaBuilder("voteparty").aliases("vp")), new VotePartyCommand());
 
             slf4jLogger.info("DankVotes enabled on Velocity.");
         } catch (Exception e) {
@@ -93,22 +96,40 @@ public class DankVotesVelocity {
         if (core != null) core.onPlayerJoin(event.getPlayer().getUsername());
     }
 
+    /** Forwarding in "current" mode: deliver held votes once the player reaches a backend. */
+    @Subscribe
+    public void onServerConnected(ServerConnectedEvent event) {
+        DankVotesCore c = core;
+        if (c != null) {
+            c.getForwarder().onPlayerServer(event.getPlayer().getUsername(), event.getServer().getServerInfo().getName());
+        }
+    }
+
+    /**
+     * Tie the command to this plugin where the proxy supports it. CommandMeta.Builder#plugin
+     * arrived in Velocity 3.1; on 3.0 the command simply registers without the link.
+     */
+    private CommandMeta meta(CommandMeta.Builder builder) {
+        try {
+            builder = builder.plugin(this);
+        } catch (NoSuchMethodError legacyVelocity) {
+            // Velocity 3.0.x
+        }
+        return builder.build();
+    }
+
+    /** Commands run on several threads; two reloads must not leave two cores running. */
+    private synchronized void reload() {
+        if (core != null) core.stop();
+        startCore();
+    }
+
     private void startCore() {
-        DankVotesConfig config = VelocityConfigLoader.load(dataDirectory.resolve("config.yml"));
+        DankVotesConfig config = VelocityConfigLoader.load(dataDirectory.resolve("config.yml"), julLogger);
         platform = new VelocityPlatform(proxy, this, julLogger, dataDirectory.toFile());
         core = new DankVotesCore(platform, config);
         text = new CommandText(core);
         core.start();
-    }
-
-    private void saveDefaultConfig() {
-        Path configFile = dataDirectory.resolve("config.yml");
-        if (Files.exists(configFile)) return;
-        try (InputStream in = getClass().getClassLoader().getResourceAsStream("config.yml")) {
-            if (in != null) Files.copy(in, configFile);
-        } catch (Exception e) {
-            slf4jLogger.error("Could not write default config: {}", e.getMessage());
-        }
     }
 
     /** Route java.util.logging (used by core) into Velocity's SLF4J logger. */
@@ -221,8 +242,7 @@ public class DankVotesVelocity {
 
             switch (args[0].toLowerCase()) {
                 case "reload" -> {
-                    core.stop();
-                    startCore();
+                    reload();
                     send(s, m.prefix + m.reloaded);
                 }
                 case "status" -> send(s, text.status());

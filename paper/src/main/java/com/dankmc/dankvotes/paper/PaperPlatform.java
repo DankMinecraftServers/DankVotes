@@ -13,28 +13,28 @@ import java.util.List;
 import java.util.logging.Logger;
 
 /**
- * Platform implementation for Paper/Spigot/Purpur/Folia.
+ * Platform implementation for every Bukkit-API server: CraftBukkit, Spigot, Paper, Purpur,
+ * Pufferfish and other forks, hybrids such as Mohist and Arclight, and Folia.
  *
- * UNIVERSAL build: compiled against the Spigot 1.8.8 API and Java 8, so it loads on
- * every server from MC 1.8 onward. Messaging uses the legacy String API
- * (sendMessage(String) + ChatColor) which exists on ALL versions - we deliberately
- * avoid the Adventure Component API because 1.8-1.16 servers don't have it.
+ * UNIVERSAL build: compiled against the Spigot 1.8.8 API and Java 8, so it loads on every
+ * server from MC 1.7.10 to the latest. Messaging uses the legacy String API
+ * (sendMessage(String) + ChatColor) which exists on ALL versions - we deliberately avoid
+ * the Adventure Component API because 1.7-1.16 servers don't have it.
  *
- * Scheduling is routed through FoliaScheduler, which uses reflection to pick the
- * correct scheduler (Folia's region schedulers when present, classic BukkitScheduler
- * otherwise).
+ * Scheduling goes through {@link SchedulerAdapter}: Folia's region schedulers when present,
+ * the classic BukkitScheduler otherwise.
  */
 public class PaperPlatform implements Platform {
 
     private final Plugin plugin;
-    private final FoliaScheduler scheduler;
+    private final SchedulerAdapter scheduler;
 
     public PaperPlatform(Plugin plugin) {
         this.plugin = plugin;
-        this.scheduler = new FoliaScheduler(plugin);
+        this.scheduler = new SchedulerAdapter(plugin);
     }
 
-    public FoliaScheduler getScheduler() { return scheduler; }
+    SchedulerAdapter getScheduler() { return scheduler; }
 
     @Override
     public Logger getLogger() {
@@ -54,8 +54,8 @@ public class PaperPlatform implements Platform {
 
     @Override
     public void dispatchConsoleCommand(final String command) {
-        // Command dispatch must run on the global/main thread on both Folia and Bukkit
-        scheduler.runGlobal(new Runnable() {
+        // Command dispatch must run on the main thread (Bukkit) or the global region (Folia).
+        boolean scheduled = scheduler.runGlobal(new Runnable() {
             @Override public void run() {
                 try {
                     Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
@@ -64,6 +64,9 @@ public class PaperPlatform implements Platform {
                 }
             }
         });
+        if (!scheduled) {
+            plugin.getLogger().warning("Server is shutting down - skipped reward command: " + command);
+        }
     }
 
     @Override
@@ -118,7 +121,7 @@ public class PaperPlatform implements Platform {
     @Override
     public List<String> getOnlinePlayerNames() {
         List<String> names = new ArrayList<String>();
-        for (Player p : Bukkit.getOnlinePlayers()) {
+        for (Player p : BukkitCompat.onlinePlayers()) {
             names.add(p.getName());
         }
         return names;
@@ -143,9 +146,12 @@ public class PaperPlatform implements Platform {
         }
     }
 
+    /** The server's own name ("Paper", "Purpur", "Folia", ...), marking regionised forks. */
     @Override
     public String getPlatformName() {
-        return scheduler.isFolia() ? "Folia" : Bukkit.getName();
+        String name = Bukkit.getName();
+        if (name == null || name.trim().isEmpty()) name = "Bukkit";
+        return scheduler.isFolia() && !name.toLowerCase(java.util.Locale.ROOT).contains("folia") ? name + " (Folia)" : name;
     }
 
     @Override

@@ -7,5 +7,7 @@ updates:
     directory: /
     schedule: { interval: monthly }
     ignore:
-      # These are pinned on purpose: 1.8.8 API = widest compatibility.
+      # These are pinned on purpose: the oldest API each platform supports = widest compatibility.
       - dependency-name: org.spigotmc:spigot-api
+      - dependency-name: org.spongepowered:spongeapi
+      - dependency-name: net.md-5:bungeecord-api

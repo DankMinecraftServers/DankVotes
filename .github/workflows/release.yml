@@ -34,6 +34,11 @@ jobs:
             echo "::error::Tag v$TAG does not match pom.xml version $POM. Bump the version (see CONTRIBUTING.md) and re-tag."
             exit 1
           fi
+          VEL=$(grep -oP 'version = "\K[^"]+' velocity/src/main/java/com/dankmc/dankvotes/velocity/DankVotesVelocity.java)
+          if [ "$VEL" != "$POM" ]; then
+            echo "::error::@Plugin(version) in DankVotesVelocity.java is $VEL but pom.xml says $POM"
+            exit 1
+          fi
 
       - name: Build with Maven
         run: mvn -B -ntp clean package

@@ -3,8 +3,8 @@ package com.dankmc.dankvotes.paper;
 import com.dankmc.dankvotes.core.CommandText;
 import com.dankmc.dankvotes.core.DankVotesConfig;
 import com.dankmc.dankvotes.core.DankVotesCore;
+import com.dankmc.dankvotes.core.DefaultConfig;
 import com.dankmc.dankvotes.core.Vote;
-import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -19,10 +19,11 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * DankVotes - Paper/Spigot/Purpur/Folia entry point (UNIVERSAL build, Java 8).
+ * DankVotes - entry point for every Bukkit-API server (UNIVERSAL build, Java 8).
  *
- * Loads on every server from Minecraft 1.8 onward (and Folia). Receives votes via
- * outbound polling (no port forwarding), the inbound Votifier v1/v2 protocol, or an
+ * Loads on CraftBukkit, Spigot, Paper, Purpur, Pufferfish and other forks, hybrids such as
+ * Mohist and Arclight, and Folia, from Minecraft 1.7.10 to the latest release. Receives votes
+ * via outbound polling (no port forwarding), the inbound Votifier v1/v2 protocol, or an
  * existing NuVotifier install, then runs fully customizable in-game rewards.
  */
 public class DankVotesPaper extends JavaPlugin implements Listener {
@@ -41,10 +42,11 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
     private CommandText text;
     private boolean nuVotifierHooked;
     private boolean placeholdersHooked;
+    private Object metrics;
 
     @Override
     public void onEnable() {
-        saveDefaultConfig();
+        DefaultConfig.saveIfMissing(getDataFolder(), DankVotesPaper.class, getLogger());
         startCore();
 
         getServer().getPluginManager().registerEvents(this, this);
@@ -70,7 +72,7 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
         }
         if (core.getConfig().metricsEnabled) {
             try {
-                MetricsHook.start(this);
+                metrics = MetricsHook.start(this);
             } catch (Throwable ignored) {
                 // Metrics are best-effort only.
             }
@@ -81,10 +83,26 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        SchedulerAdapter scheduler = null;
         if (core != null) {
+            if (core.getPlatform() instanceof PaperPlatform) {
+                scheduler = ((PaperPlatform) core.getPlatform()).getScheduler();
+            }
             core.stop();
             core = null;
         }
+        if (metrics != null) {
+            try { MetricsHook.stop(metrics); } catch (Throwable ignored) {}
+            metrics = null;
+        }
+        if (scheduler != null) scheduler.cancelAll();
+    }
+
+    /** Folia runs commands on several threads at once, so two reloads must not interleave. */
+    private synchronized void reload() {
+        reloadConfig();
+        if (core != null) core.stop();
+        startCore();
     }
 
     private void startCore() {
@@ -174,9 +192,7 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
         DankVotesConfig.Messages m = core.getConfig().messages;
 
         if (sub.equals("reload")) {
-            reloadConfig();
-            core.stop();
-            startCore();
+            reload();
             sender.sendMessage(PaperPlatform.color(m.prefix + m.reloaded));
             return true;
         }
@@ -268,7 +284,7 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
 
     private static List<String> onlineNames(String prefix) {
         List<String> names = new ArrayList<String>();
-        for (Player p : Bukkit.getOnlinePlayers()) names.add(p.getName());
+        for (Player p : BukkitCompat.onlinePlayers()) names.add(p.getName());
         return filter(names, prefix);
     }
 

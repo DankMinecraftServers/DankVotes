@@ -7,13 +7,13 @@ body:
     attributes:
       label: DankVotes version
       description: Output of /dankvotes version
-      placeholder: "1.0.0"
+      placeholder: "1.1.0"
     validations: { required: true }
   - type: input
     id: server
     attributes:
       label: Server software & Minecraft version
-      placeholder: "Paper 1.21.4 / Folia / Velocity 3.4"
+      placeholder: "Paper 26.3 / Folia 26.1.2 / SpongeVanilla 1.21.4 / Velocity 3.4 / Waterfall"
     validations: { required: true }
   - type: dropdown
     id: source

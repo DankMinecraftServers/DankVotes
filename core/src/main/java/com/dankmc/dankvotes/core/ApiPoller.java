@@ -98,6 +98,8 @@ public class ApiPoller {
             for (int i = 0; i < votes.length(); i++) {
                 JsonObject v = votes.getObject(i);
                 if (v == null) continue;
+                // Shutting down or reloading: leave the rest unacknowledged so the site re-sends them.
+                if (!engine.isAccepting()) break;
                 long id = v.optLong("id", 0);
                 if (id > 0) toAck.add(id); // ack no matter what happens below
                 try {
@@ -107,7 +109,13 @@ public class ApiPoller {
                     if (Strings.isBlank(username)) continue;
 
                     Vote vote = new Vote(username, SERVICE_NAME, "", ts, verified, id);
-                    if (engine.processVote(vote)) totalReceived++;
+                    RewardEngine.Outcome outcome = engine.processVoteDetailed(vote);
+                    if (outcome == RewardEngine.Outcome.ACCEPTED) {
+                        totalReceived++;
+                    } else if (outcome == RewardEngine.Outcome.STOPPING) {
+                        toAck.remove(Long.valueOf(id));   // not processed: let the site deliver it again
+                        break;
+                    }
                 } catch (Exception perVote) {
                     platform.getLogger().warning("Failed to process vote id " + id + ": " + perVote.getMessage());
                 }

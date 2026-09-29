@@ -15,6 +15,7 @@ public class DankVotesCore {
     private final VotifierServer votifierServer;
     private final VoteReminder reminder;
     private final UpdateChecker updateChecker;
+    private final VoteForwarder forwarder;
     private final long startedAt = System.currentTimeMillis();
 
     public DankVotesCore(Platform platform, DankVotesConfig config) {
@@ -26,12 +27,16 @@ public class DankVotesCore {
         this.votifierServer = new VotifierServer(platform, config, engine);
         this.reminder = new VoteReminder(platform, config, storage, engine);
         this.updateChecker = new UpdateChecker(platform, config);
+        this.forwarder = new VoteForwarder(platform, config);
     }
 
     /** Start polling and/or the Votifier listener based on config. */
     public void start() {
         platform.getLogger().info("DankVotes v" + platform.getPluginVersion() + " starting on " + platform.getPlatformName());
 
+        // Forwarding first, so no vote can arrive before it is ready to pass them on.
+        forwarder.start();
+        if (forwarder.isRunning()) engine.setForwarder(forwarder);
         if (config.pollingEnabled) poller.start();
         if (config.votifierEnabled) votifierServer.start();
         reminder.start();
@@ -47,10 +52,14 @@ public class DankVotesCore {
     }
 
     public void stop() {
+        // Refuse new votes first (senders retry; the poller leaves them unacknowledged), then
+        // wait for the vote being processed, so everything accepted is also queued for forwarding.
+        engine.stopAccepting();
         poller.stop();
         votifierServer.stop();
         reminder.stop();
         updateChecker.stop();
+        forwarder.stop();
         storage.close();
         platform.getLogger().info("DankVotes stopped.");
     }
@@ -74,4 +83,5 @@ public class DankVotesCore {
     public ApiPoller getPoller() { return poller; }
     public VotifierServer getVotifierServer() { return votifierServer; }
     public UpdateChecker getUpdateChecker() { return updateChecker; }
+    public VoteForwarder getForwarder() { return forwarder; }
 }

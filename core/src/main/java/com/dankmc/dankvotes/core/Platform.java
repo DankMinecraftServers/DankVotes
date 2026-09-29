@@ -85,6 +85,20 @@ public interface Platform {
         return true;
     }
 
+    /** True on proxies (Velocity, BungeeCord), where players sit on backend servers. */
+    default boolean isProxy() {
+        return false;
+    }
+
+    /**
+     * Proxies only: the name of the backend server the player is connected to (as named in
+     * the proxy's config), or null if they're offline or it's unknown. Used by vote
+     * forwarding in "current" mode.
+     */
+    default String getPlayerServer(String username) {
+        return null;
+    }
+
     /** Platform name for logging, e.g. "Paper", "Folia", "Velocity". */
     String getPlatformName();
 

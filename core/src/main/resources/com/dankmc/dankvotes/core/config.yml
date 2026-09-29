@@ -1,6 +1,8 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  DankVotes - Configuration
-#  Vote rewards for Minecraft 1.8+ (Spigot/Paper/Purpur/Folia) and Velocity.
+#  Vote rewards for every Minecraft server: Spigot, Paper, Purpur, Folia and other
+#  Bukkit forks (1.7.10+), Sponge (API 8+), Velocity and BungeeCord. The same file
+#  works on all of them.
 #
 #  Docs & support:  https://github.com/DankMinecraftServers/DankVotes
 #  Get listed:      https://dankminecraftservers.com
@@ -34,20 +36,42 @@ votifier:
   # v2 (token) protocol: the same random string you paste into each vote site.
   # Leave empty to only accept v1 (RSA) votes.
   token: ""
-  # v1 (RSA) protocol: keys are generated in plugins/DankVotes/rsa/ on first start.
-  # Paste the contents of rsa/public.key into vote sites that ask for a public key
-  # (or run /dankvotes key). Copy an existing NuVotifier rsa/ folder here to keep
+  # v1 (RSA) protocol: keys are generated in an rsa/ folder next to this file on first
+  # start. Paste the contents of rsa/public.key into vote sites that ask for a public
+  # key (or run /dankvotes key). Copy an existing NuVotifier rsa/ folder here to keep
   # the same key.
   v1-rsa: true
 
 # 3) NUVOTIFIER HOOK: if NuVotifier is installed, DankVotes also rewards every vote
-#    it receives. Nothing to change on your vote sites.
+#    it receives. Nothing to change on your vote sites. (Bukkit-based servers only.)
 nuvotifier-hook: true
 
 # Ignore a vote if the same player already voted on the same site within this many
 # seconds (protects against the same vote arriving twice, e.g. via Votifier AND
 # polling, or a site retrying delivery). 0 disables.
 duplicate-window-seconds: 120
+
+# ── FORWARDING (networks: Velocity / BungeeCord) ─────────────────────────────
+# On a proxy, forward every vote it receives to the servers behind it (Paper, Folia,
+# Purpur, Sponge...) so THEY give the in-world rewards - even to players who aren't
+# online on that server yet (they get them when they join it).
+#
+# Each backend server runs DankVotes too (or NuVotifier) with:
+#   votifier.enabled: true, a private port (e.g. 8193), a token, and polling.enabled: false
+# then list it below with that same port and token. Keep those ports closed to the internet
+# (bind the backend's votifier.host to 127.0.0.1 or your private network).
+# Votes that can't be delivered are kept (forwarding-queue.json) and retried for 7 days.
+forwarding:
+  enabled: false
+  # all     = every server below gets every vote (each can reward the player)
+  # current = only the server the player is on gets it; if they're offline it waits
+  #           until they join one of these servers (names must match your proxy config)
+  mode: all
+  servers:
+    - name: "survival"
+      host: "127.0.0.1"
+      port: 8193
+      token: "the votifier.token from the survival server's config"
 
 # ── BEHAVIOUR ────────────────────────────────────────────────────────────────
 behaviour:

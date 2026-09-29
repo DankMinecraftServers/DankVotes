@@ -7,24 +7,26 @@
     <parent>
         <groupId>com.dankmc</groupId>
         <artifactId>dankvotes-parent</artifactId>
-        <version>1.0.0</version>
+        <version>1.1.0</version>
     </parent>
 
     <artifactId>dankvotes-paper</artifactId>
     <packaging>jar</packaging>
 
     <!--
-      Spigot/Paper/Purpur/Folia half. Compiled to Java 8 bytecode against the Spigot
-      1.8.8 API so it loads on Minecraft 1.8 - 26.1.2 (and Folia). This module produces
-      a PLAIN jar of just its own classes; the final single distributable jar is
-      assembled by the :dist module, which merges core + paper + velocity together.
+      Every Bukkit-API server: CraftBukkit, Spigot, Paper, Purpur, Pufferfish and other
+      forks, hybrids (Mohist, Arclight...) and Folia. Compiled to Java 8 bytecode against the
+      Spigot 1.8.8 API so it loads on Minecraft 1.7.10 through 26.x; the few APIs that
+      differ between versions (Folia's schedulers, 1.7's getOnlinePlayers) are reached
+      through reflection. This module produces a PLAIN jar of just its own classes; the
+      final single distributable jar is assembled by the :dist module.
     -->
 
     <dependencies>
         <dependency>
             <groupId>com.dankmc</groupId>
             <artifactId>dankvotes-core</artifactId>
-            <version>1.0.0</version>
+            <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -40,11 +42,12 @@
             <version>2.11.6</version>
             <scope>provided</scope>
         </dependency>
-        <!-- Anonymous usage metrics. Shaded + relocated by the dist module. -->
+        <!-- Anonymous usage metrics. Shaded + relocated by the dist module.
+             3.1.0+ detects Folia and stays off the Bukkit scheduler there. -->
         <dependency>
             <groupId>org.bstats</groupId>
             <artifactId>bstats-bukkit</artifactId>
-            <version>3.0.2</version>
+            <version>3.1.0</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>

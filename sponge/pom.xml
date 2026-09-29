@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.dankmc</groupId>
+        <artifactId>dankvotes-parent</artifactId>
+        <version>1.1.0</version>
+    </parent>
+
+    <artifactId>dankvotes-sponge</artifactId>
+    <packaging>jar</packaging>
+
+    <!--
+      Sponge half: SpongeVanilla, SpongeForge and SpongeNeo, API 8 and newer (Minecraft 1.16.5
+      onward). Compiled to Java 8 bytecode against SpongeAPI 8.1.0, the oldest supported API,
+      using only calls that are unchanged in every later API release. Sponge finds the plugin
+      through META-INF/sponge_plugins.json; its "spongeapi" dependency names a plain version,
+      which Sponge treats as "any API version".
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>com.dankmc</groupId>
+            <artifactId>dankvotes-core</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.spongepowered</groupId>
+            <artifactId>spongeapi</artifactId>
+            <version>8.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Shipped by every Sponge build (Configurate's YAML format uses it). -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>2.2</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>8</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

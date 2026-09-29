@@ -6,18 +6,19 @@
 
     <groupId>com.dankmc</groupId>
     <artifactId>dankvotes-parent</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>pom</packaging>
 
     <name>DankVotes</name>
-    <description>Vote rewards done right for Minecraft 1.8+ (Spigot/Paper/Purpur/Folia) and Velocity</description>
+    <description>Vote rewards done right for every Minecraft server: Bukkit forks 1.7.10+ (Spigot, Paper, Purpur, Folia...), Sponge (API 8+), Velocity and BungeeCord</description>
     <url>https://dankminecraftservers.com</url>
 
     <!--
       DankVotes has ZERO third-party runtime dependencies. We ship our own tiny JSON
       parser instead of bundling a library. The only "dependencies" are the server APIs
-      themselves (Spigot/Velocity), which are <scope>provided</scope> — the server
-      supplies them at runtime, so nothing extra is bundled into our jars.
+      themselves (Spigot/Velocity/BungeeCord/Sponge, plus the SnakeYAML every one of them
+      ships), which are <scope>provided</scope> — the server supplies them at runtime, so
+      nothing extra is bundled into our jars.
 
       The one exception is bStats (anonymous usage metrics), which is shaded into the
       final jar and relocated to com.dankmc.dankvotes.libs.bstats so it can never clash
@@ -25,15 +26,20 @@
 
       Modules:
         core     - platform-agnostic logic, Java 8 bytecode, no dependencies
-        paper    - universal Spigot/Paper/Purpur/Folia half (MC 1.8+), Java 8
-        velocity - Velocity proxy half, Java 17
-        dist     - merges the three into the single distributable jar
+        paper    - every Bukkit-API server: Spigot, Paper, Purpur, Folia, forks, hybrids
+                   (MC 1.7.10+), Java 8
+        velocity - Velocity proxy, Java 17
+        bungee   - BungeeCord / Waterfall proxy, Java 8
+        sponge   - Sponge API 8+ (SpongeVanilla / SpongeForge / SpongeNeo, MC 1.16.5+), Java 8
+        dist     - merges them all into the single distributable jar
     -->
 
     <modules>
         <module>core</module>
         <module>paper</module>
         <module>velocity</module>
+        <module>bungee</module>
+        <module>sponge</module>
         <module>dist</module>
     </modules>
 
@@ -58,6 +64,11 @@
         <repository>
             <id>placeholderapi</id>
             <url>https://repo.extendedclip.com/releases/</url>
+        </repository>
+        <!-- SpongeAPI and its libraries (per docs.spongepowered.org "Setting Up Maven"). -->
+        <repository>
+            <id>sponge</id>
+            <url>https://repo.spongepowered.org/repository/maven-public/</url>
         </repository>
     </repositories>
 

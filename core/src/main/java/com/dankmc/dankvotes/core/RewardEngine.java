@@ -31,6 +31,22 @@ public class RewardEngine {
     /** Dedupe: "user|service" -> epoch millis of the last accepted vote. */
     private final Map<String, Long> recent = new ConcurrentHashMap<String, Long>();
 
+    /** Passes accepted votes on to backend servers (proxies); null when forwarding is off. */
+    private volatile VoteForwarder forwarder;
+
+    /** False once the core starts shutting down: new votes are refused so their source retries. */
+    private volatile boolean accepting = true;
+
+    /** What happened to a vote handed to {@link #processVoteDetailed}. */
+    public enum Outcome {
+        /** Counted and rewarded (or queued). */
+        ACCEPTED,
+        /** Refused for good: invalid name, duplicate, unverified, or cancelled by another plugin. */
+        REJECTED,
+        /** DankVotes is shutting down or reloading; the sender should deliver it again later. */
+        STOPPING
+    }
+
     public RewardEngine(Platform platform, DankVotesConfig config, VoteStorage storage) {
         this.platform = platform;
         this.config = config;
@@ -41,7 +57,27 @@ public class RewardEngine {
      * Process an incoming vote. Safe to call from any thread; dispatches to the platform
      * scheduler as needed. Returns true if the vote was accepted (counted).
      */
-    public synchronized boolean processVote(Vote vote) {
+    public boolean processVote(Vote vote) {
+        return processVoteDetailed(vote) == Outcome.ACCEPTED;
+    }
+
+    /** Like {@link #processVote} but tells a refusal apart from "shutting down, try again". */
+    public synchronized Outcome processVoteDetailed(Vote vote) {
+        if (!accepting) return Outcome.STOPPING;
+        return process(vote) ? Outcome.ACCEPTED : Outcome.REJECTED;
+    }
+
+    public boolean isAccepting() { return accepting; }
+
+    /** Refuse new votes from now on; returns once any vote being processed has finished. */
+    public void stopAccepting() {
+        accepting = false;
+        synchronized (this) {
+            // Holding the lock means no processVote is mid-flight any more.
+        }
+    }
+
+    private boolean process(Vote vote) {
         if (Strings.isBlank(vote.getUsername())) {
             platform.getLogger().warning("Ignoring vote with empty username from " + vote.getServiceName());
             return false;
@@ -77,6 +113,16 @@ public class RewardEngine {
         int newCount = storage.recordVote(vote.getUsername(), vote.getTimestamp(), config.streaksEnabled);
         Vote counted = vote.withVoteNumber(newCount);
         int streak = storage.getStreak(vote.getUsername());
+
+        // Hand it to the backend servers first, so their rewards never wait on ours.
+        VoteForwarder f = forwarder;
+        if (f != null) {
+            try {
+                f.forward(counted);
+            } catch (Exception e) {
+                platform.getLogger().warning("Could not queue the vote for forwarding: " + e.getMessage());
+            }
+        }
 
         if (config.broadcastEnabled) {
             platform.broadcast(applyPlaceholders(config.broadcastMessage, counted, newCount, streak));
@@ -298,6 +344,8 @@ public class RewardEngine {
     private void debug(String msg) {
         if (config.debug) platform.getLogger().info("[debug] " + msg);
     }
+
+    void setForwarder(VoteForwarder forwarder) { this.forwarder = forwarder; }
 
     public int getVotePartyProgress() { return storage.getPartyProgress(); }
     public int getVotePartyGoal() { return config.votePartyGoal; }

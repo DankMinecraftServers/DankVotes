@@ -104,6 +104,7 @@ public final class CommandText {
             ? (v.isRunning() ? "&alistening on &f" + cfg.votifierHost + ":" + cfg.votifierPort : "&cnot running")
             : "&7disabled")
             + (cfg.votifierEnabled ? " &8| &7received: &f" + v.getTotalReceived() : ""));
+        out.addAll(core.getForwarder().statusLines());
         out.add("&7NuVotifier hook: " + (cfg.nuVotifierHookEnabled ? "&aenabled" : "&7disabled")
             + " &8| &7Reminders: " + (cfg.reminderEnabled ? "&aon" : "&7off")
             + " &8| &7Streaks: " + (cfg.streaksEnabled ? "&aon" : "&7off"));

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.dankmc</groupId>
+        <artifactId>dankvotes-parent</artifactId>
+        <version>1.1.0</version>
+    </parent>
+
+    <artifactId>dankvotes-bungee</artifactId>
+    <packaging>jar</packaging>
+
+    <!--
+      BungeeCord proxy half (also Waterfall, FlameCord and other BungeeCord forks).
+      Compiled to Java 8 bytecode against the 1.16 API: everything it uses has existed since
+      the 1.8 era, so it loads on old and current proxies alike. BungeeCord reads bungee.yml
+      in preference to the Bukkit plugin.yml that lives in the same jar.
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>com.dankmc</groupId>
+            <artifactId>dankvotes-core</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.md-5</groupId>
+            <artifactId>bungeecord-api</artifactId>
+            <version>1.16-R0.4</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Bundled with every BungeeCord build (its own config API uses it). -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>2.2</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>8</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

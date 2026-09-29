@@ -37,6 +37,13 @@ public class DankVotesConfig {
      */
     public int duplicateWindowSeconds = 120;
 
+    // ── Forwarding (proxy -> backend servers) ────────────────────────
+    /** Forward every accepted vote to the servers below over the Votifier v2 protocol. */
+    public boolean forwardingEnabled = false;
+    /** "all": every server gets every vote. "current": only the server the player is on. */
+    public String forwardingMode = "all";
+    public List<ForwardTarget> forwardingServers = new ArrayList<ForwardTarget>();
+
     // ── Behaviour ────────────────────────────────────────────────────
     public boolean queueOfflineVotes = true;
     public boolean requireVerified = false;
@@ -120,6 +127,20 @@ public class DankVotesConfig {
         public Type type = Type.EVERY;
         public int votes = 5;
         public List<RewardCommand> commands = new ArrayList<RewardCommand>();
+    }
+
+    /** A backend server that receives forwarded votes (its Votifier listener + v2 token). */
+    public static class ForwardTarget {
+        public final String name;
+        public final String host;
+        public final int port;
+        public final String token;
+        public ForwardTarget(String name, String host, int port, String token) {
+            this.name = name == null ? "" : name;
+            this.host = host == null ? "" : host;
+            this.port = port;
+            this.token = token == null ? "" : token;
+        }
     }
 
     /** A vote site shown by /vote. */

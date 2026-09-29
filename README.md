@@ -2,12 +2,13 @@
 
 # DankVotes
 
-**Vote rewards done right.** One jar for Spigot, Paper, Purpur, Folia **and** Velocity.
+**Vote rewards done right.** One jar for every Minecraft server: Spigot, Paper, Purpur, Folia
+and other forks, Sponge, Velocity **and** BungeeCord.
 
 [![Build](https://github.com/DankMinecraftServers/DankVotes/actions/workflows/build.yml/badge.svg)](https://github.com/DankMinecraftServers/DankVotes/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/DankMinecraftServers/DankVotes?label=download)](https://github.com/DankMinecraftServers/DankVotes/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.8%20→%20latest-brightgreen)](#compatibility)
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.7.10%20→%20latest-brightgreen)](#compatibility)
 
 [Download](https://github.com/DankMinecraftServers/DankVotes/releases/latest) · [Quick start](#quick-start) · [Configuration](#configuration) · [Commands](#commands--permissions) · [Placeholders](#placeholderapi) · [Developer API](#developer-api)
 
@@ -25,7 +26,8 @@ ports** by polling [DankMinecraftServers.com](https://dankminecraftservers.com) 
 
 | | |
 |---|---|
-| **Three ways to receive votes** | HTTPS polling (no port forwarding), a built-in Votifier v1 + v2 listener, or a hook into an existing NuVotifier install — use any combination |
+| **Three ways to receive votes** | HTTPS polling (no port forwarding), a built-in Votifier v1 + v2 listener (NuVotifier-compatible), or a hook into an existing NuVotifier install — use any combination |
+| **Network forwarding** | A Velocity or BungeeCord proxy passes every vote on to the servers behind it (Paper, Folia, Purpur, Sponge...), with a retry queue that survives restarts |
 | **Rewards** | Console commands per vote, with per-command **chance** and **permission** gates |
 | **Milestones** | Rewards every *N* votes or at exactly *N* (`EVERY` / `AT`) |
 | **Streaks** | Consecutive-day streak tracking with streak rewards and best-streak records |
@@ -35,7 +37,7 @@ ports** by polling [DankMinecraftServers.com](https://dankminecraftservers.com) 
 | **Player commands** | `/vote`, `/votes`, `/votetop`, `/voteparty` |
 | **Integrations** | PlaceholderAPI expansion, `DankVoteEvent` for other plugins, NuVotifier bridge, bStats |
 | **Safety** | Duplicate-vote protection across channels, verified-IP filtering, atomic data saves, update notifications |
-| **Folia-native** | Uses the region/async schedulers correctly — no "wrong thread" errors |
+| **Runs everywhere** | Bukkit forks from 1.7.10 to the latest release, Folia (region schedulers, no "wrong thread" errors), Sponge, Velocity and BungeeCord — one jar, one config |
 | **Zero dependencies** | Nothing to install alongside it; no library conflicts |
 
 ## Compatibility
@@ -44,15 +46,71 @@ ports** by polling [DankMinecraftServers.com](https://dankminecraftservers.com) 
 
 | Software | Versions | How it loads |
 |---|---|---|
-| Spigot · Paper · Purpur · Pufferfish | **1.8 → latest** | `plugin.yml` (Java 8 bytecode) |
-| Folia | 1.20+ | auto-detected at runtime |
-| Velocity | 3.x | `velocity-plugin.json` (Java 17) |
+| CraftBukkit · Spigot · Paper · Purpur · Pufferfish · Leaf and other Bukkit forks | **1.7.10 → latest** | `plugin.yml` (Java 8 bytecode) |
+| Folia and its forks | every Folia build | `plugin.yml` + Folia's region schedulers, detected at runtime |
+| Hybrids: Mohist · Arclight · Magma · Ketting · Youer | any with the Bukkit API | `plugin.yml` |
+| Sponge: SpongeVanilla · SpongeForge · SpongeNeo | **API 8 → latest** (Minecraft 1.16.5+) | `META-INF/sponge_plugins.json` (Java 8) |
+| Velocity | 3.x (Java 17+) | `velocity-plugin.json` (Java 17) |
+| BungeeCord · Waterfall · FlameCord | current and older builds | `bungee.yml` (Java 8) |
 
-The server loads only the half it understands; the other half is never touched.
+The server loads only the part it understands; the rest is never touched. Java 8 or newer is
+enough everywhere except Velocity. Plain Fabric, Forge or NeoForge servers can't load plugins
+on their own; add SpongeForge/SpongeNeo or use a Bukkit hybrid (Mohist, Arclight, Youer...).
 
-> **Networks:** put the jar on the Velocity proxy *and* on each backend Paper server. In-world
-> rewards (items, crates) must run where the player is — on the backend. The proxy half is
-> for network-wide announcements, streaks, `/vote` and `/votetop`.
+Where the config lives: `plugins/DankVotes/config.yml` on Bukkit-based servers and BungeeCord,
+`plugins/dankvotes/config.yml` on Velocity, `config/dankvotes/config.yml` on Sponge. It's the
+same file format on all of them.
+
+> **Networks** (Velocity or BungeeCord in front of your servers): see
+> [Networks: forwarding votes to your servers](#networks-forwarding-votes-to-your-servers).
+
+## Networks: forwarding votes to your servers
+
+Running Velocity or BungeeCord in front of Paper, Folia, Purpur or Sponge servers? Put the jar
+on the proxy **and** on every backend server. The proxy receives the votes (polling needs no
+open ports) and forwards each one to the backends over the Votifier v2 protocol; the backends
+give the in-world rewards — also to players who aren't online on that server yet (they get them
+when they join it).
+
+**Proxy** (`plugins/dankvotes/config.yml` on Velocity, `plugins/DankVotes/config.yml` on BungeeCord):
+
+```yaml
+polling:
+  enabled: true
+  api-token: "your DankMinecraftServers token"
+forwarding:
+  enabled: true
+  mode: all              # or "current": only the server the player is on (held until they join one)
+  servers:
+    - { name: "survival", host: "127.0.0.1", port: 8193, token: "survival-secret" }
+    - { name: "skyblock", host: "10.0.0.12", port: 8193, token: "skyblock-secret" }
+rewards: []              # in-world rewards live on the backends
+```
+
+**Each backend**, e.g. a Folia survival server:
+
+```yaml
+polling:
+  enabled: false         # the proxy fetches the votes
+votifier:
+  enabled: true
+  host: "127.0.0.1"      # or its private network address - keep this port off the internet
+  port: 8193
+  token: "survival-secret"
+rewards:
+  - "give %player% diamond 3"
+```
+
+- Votes a backend can't take right now (restarting, down) wait in `forwarding-queue.json` on
+  the proxy and are retried for up to 7 days, across proxy restarts. `/dankvotes status` on the
+  proxy shows every server's state.
+- With `mode: current`, the `name` must match the server's name in `velocity.toml` or
+  BungeeCord's `config.yml`.
+- Backends may also run NuVotifier, and a NuVotifier proxy using its `proxy` forwarding method
+  can deliver to DankVotes backends: both speak the standard Votifier v2 protocol.
+- Broadcasts and vote parties: keep them on one side (for example on the proxy, off on the
+  backends) so players don't see them twice.
+- Test the whole chain with `/dankvotes test <player>` on the proxy.
 
 ## Quick start
 
@@ -156,8 +214,8 @@ Installed automatically when PlaceholderAPI is present:
 
 ## Developer API
 
-On Paper/Spigot, DankVotes fires a cancellable Bukkit event for every vote **before** it is
-counted or rewarded. Add DankVotes as a `softdepend` and listen:
+On Bukkit-based servers (Spigot, Paper, Folia...), DankVotes fires a cancellable Bukkit event
+for every vote **before** it is counted or rewarded. Add DankVotes as a `softdepend` and listen:
 
 ```java
 @EventHandler
@@ -180,9 +238,10 @@ mvn -B clean package
 # → dist/target/DankVotes-<version>.jar
 ```
 
-The Spigot half is compiled to Java 8 bytecode and the Velocity half to Java 17; both live
-in the one jar. Every push is also built by [GitHub Actions](.github/workflows/build.yml),
-and tagging `vX.Y.Z` publishes a release with the jar attached.
+The Bukkit, BungeeCord and Sponge parts are compiled to Java 8 bytecode and the Velocity part
+to Java 17; all of them live in the one jar. Every push is also built by
+[GitHub Actions](.github/workflows/build.yml), and tagging `vX.Y.Z` publishes a release with
+the jar attached.
 
 ## Support
 

@@ -1,0 +1,5 @@
+name: DankVotes
+version: '${project.version}'
+main: com.dankmc.dankvotes.bungee.DankVotesBungee
+author: DankMinecraftServers
+description: Vote rewards done right - polling (no port forwarding), Votifier v1/v2, streaks, vote parties, reminders, leaderboards.

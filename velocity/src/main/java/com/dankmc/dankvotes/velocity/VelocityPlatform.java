@@ -18,9 +18,10 @@ import java.util.logging.Logger;
  * Platform implementation for the Velocity proxy.
  *
  * On a proxy, "console commands" run against the proxy itself. Rewards that must
- * happen inside a world (items, crates) belong on the backend servers - run the same
- * DankVotes jar there. The proxy half is ideal for network-wide announcements, proxy
- * plugins (e.g. LuckPerms in proxy mode) and network-wide /vote, /votetop, streaks.
+ * happen inside a world (items, crates) belong on the backend servers: run the same
+ * DankVotes jar there and let the proxy forward every vote to them (forwarding: in
+ * config.yml). The proxy half is ideal for network-wide announcements, proxy plugins
+ * (e.g. LuckPerms in proxy mode) and network-wide /vote, /votetop, streaks.
  */
 public class VelocityPlatform implements Platform {
 
@@ -111,6 +112,17 @@ public class VelocityPlatform implements Platform {
     @Override
     public boolean hasPermission(String username, String permission) {
         return proxy.getPlayer(username).map(p -> p.hasPermission(permission)).orElse(false);
+    }
+
+    @Override public boolean isProxy() { return true; }
+
+    /** The backend server (as named in velocity.toml) the player is on, or null. */
+    @Override
+    public String getPlayerServer(String username) {
+        return proxy.getPlayer(username)
+            .flatMap(Player::getCurrentServer)
+            .map(connection -> connection.getServerInfo().getName())
+            .orElse(null);
     }
 
     @Override public String getPlatformName() { return "Velocity"; }

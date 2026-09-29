@@ -7,19 +7,31 @@
     <parent>
         <groupId>com.dankmc</groupId>
         <artifactId>dankvotes-parent</artifactId>
-        <version>1.0.0</version>
+        <version>1.1.0</version>
     </parent>
 
     <artifactId>dankvotes-core</artifactId>
     <packaging>jar</packaging>
 
-    <!-- Platform-agnostic core. No dependencies whatsoever. Compiles to Java 8. -->
+    <!-- Platform-agnostic core. No dependencies whatsoever. Compiles to Java 8.
+         Also owns the single default config.yml that every platform writes on first start. -->
 
     <build>
         <resources>
+            <!-- Only the version file is filtered; config.yml is copied byte for byte. -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>
+                <includes>
+                    <include>dankvotes.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>dankvotes.properties</exclude>
+                </excludes>
             </resource>
         </resources>
         <plugins>
