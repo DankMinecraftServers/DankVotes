@@ -1,0 +1,179 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  DankVotes - Configuration
+#  Vote rewards for Minecraft 1.8+ (Spigot/Paper/Purpur/Folia) and Velocity.
+#
+#  Docs & support:  https://github.com/DankMinecraftServers/DankVotes
+#  Get listed:      https://dankminecraftservers.com
+#
+#  Colour codes: use & (e.g. &d = light purple, &7 = grey, &l = bold).
+#  Placeholders available in messages AND reward commands:
+#    %player%  %service%  %votes%  %streak%  %best_streak%  %total_votes%
+#    %party_progress%  %party_goal%  %party_remaining%
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── HOW VOTES REACH YOUR SERVER ──────────────────────────────────────────────
+# Use ANY combination of the three sources below.
+
+# 1) POLLING (recommended for DankMinecraftServers): your server fetches votes
+#    over HTTPS. No port forwarding, works behind any firewall/NAT or shared host.
+polling:
+  enabled: true
+  api-url: "https://dankminecraftservers.com"
+  # Dashboard -> your server -> "Vote Rewards" -> copy the API token.
+  api-token: "PASTE-YOUR-SERVER-API-TOKEN-HERE"
+  # Seconds between checks (minimum 5).
+  interval-seconds: 15
+
+# 2) VOTIFIER LISTENER: a built-in Votifier server compatible with EVERY vote site.
+#    This is a full replacement for NuVotifier (do not run both on the same port).
+#    Requires port-forwarding the port below to your server.
+votifier:
+  enabled: false
+  host: "0.0.0.0"
+  port: 8192
+  # v2 (token) protocol: the same random string you paste into each vote site.
+  # Leave empty to only accept v1 (RSA) votes.
+  token: ""
+  # v1 (RSA) protocol: keys are generated in plugins/DankVotes/rsa/ on first start.
+  # Paste the contents of rsa/public.key into vote sites that ask for a public key
+  # (or run /dankvotes key). Copy an existing NuVotifier rsa/ folder here to keep
+  # the same key.
+  v1-rsa: true
+
+# 3) NUVOTIFIER HOOK: if NuVotifier is installed, DankVotes also rewards every vote
+#    it receives. Nothing to change on your vote sites.
+nuvotifier-hook: true
+
+# Ignore a vote if the same player already voted on the same site within this many
+# seconds (protects against the same vote arriving twice, e.g. via Votifier AND
+# polling, or a site retrying delivery). 0 disables.
+duplicate-window-seconds: 120
+
+# ── BEHAVIOUR ────────────────────────────────────────────────────────────────
+behaviour:
+  # If a player votes while offline, save the reward and give it when they next join.
+  queue-offline-votes: true
+
+  # Only reward votes from real (non-VPN/proxy) IPs. DankMinecraftServers flags each
+  # vote as verified or not; set true to ignore unverified votes entirely.
+  # (Votifier votes have no verification data and are always treated as verified.)
+  require-verified: false
+
+  broadcast:
+    enabled: true
+    message: "&d%player% &7voted for the server and earned a reward! &d/vote"
+
+  thank-you:
+    enabled: true
+    message: "&aThanks for voting, %player%! &7(&e%votes% &7total votes, &e%streak%&7-day streak)"
+
+# ── /vote LINKS ──────────────────────────────────────────────────────────────
+# Shown to players by /vote. Add every site you're listed on.
+vote-links:
+  - name: "DankMinecraftServers"
+    url: "https://dankminecraftservers.com/server/YOUR-SERVER"
+
+# ── REWARDS (run for EVERY vote) ─────────────────────────────────────────────
+# Each entry is either:
+#   - "a console command"                                      (always runs)
+#   - { command: "a console command", chance: 25 }             (runs with a % chance)
+#   - { command: "...", permission: "some.perm" }              (only if the player has it)
+rewards:
+  - "give %player% diamond 3"
+  - "eco give %player% 500"
+  - { command: "crate key %player% vote 1", chance: 100 }
+  - { command: "give %player% diamond_block 1", chance: 25 }     # 25% bonus drop
+  - { command: "eco give %player% 250", permission: "group.vip" } # extra for VIPs
+
+# ── MILESTONES (cumulative vote rewards per player) ──────────────────────────
+# type: EVERY -> runs every N votes (e.g. every 5th vote)
+# type: AT    -> runs once, when the player reaches exactly N votes
+milestones:
+  - type: EVERY
+    votes: 5
+    commands:
+      - "crate key %player% vote 3"
+      - "broadcast &d%player% &7hit a &d%votes%-vote &7milestone!"
+  - type: AT
+    votes: 100
+    commands:
+      - "lp user %player% parent add vip"
+      - "broadcast &6%player% &7reached &6100 votes &7and earned &6VIP&7!"
+
+# ── STREAKS (consecutive days voted) ─────────────────────────────────────────
+# A streak increases when a player votes on consecutive days and resets if they
+# miss a day. Streak rewards use the same EVERY / AT format, keyed on DAYS.
+streaks:
+  enabled: true
+  broadcast:
+    enabled: false
+    message: "&d%player% &7is on a &d%streak%-day &7voting streak!"
+  rewards:
+    - type: EVERY
+      days: 7
+      commands:
+        - "crate key %player% vote 2"
+        - "broadcast &d%player% &7kept a &d7-day &7vote streak!"
+    - type: AT
+      days: 30
+      commands:
+        - "give %player% netherite_ingot 1"
+
+# ── VOTE PARTY (server-wide goal) ────────────────────────────────────────────
+# When the whole server reaches the goal, everyone online gets rewards.
+# Commands containing %player% run once per online player; others run once.
+# Progress is saved across restarts.
+vote-party:
+  enabled: false
+  goal: 50
+  # Broadcast progress every N votes (0 = never).
+  announce-every: 10
+  progress-message: "&7Vote party: &d%party_progress%&7/&d%party_goal% &7- &d%party_remaining% &7more to go! &d/vote"
+  start-message: "&d&lVOTE PARTY! &7The server reached &d%party_goal% &7votes - rewards for everyone!"
+  rewards:
+    - "crate key %player% party 1"        # per online player
+    - "eco give %player% 1000"            # per online player
+    - "broadcast &dEnjoy your party rewards!"   # once
+
+# ── REMINDERS ────────────────────────────────────────────────────────────────
+# Nudge online players who haven't voted today. Players with the permission
+# dankvotes.reminder.bypass are never reminded.
+reminders:
+  enabled: true
+  interval-minutes: 30
+  on-join: true
+  on-join-delay-seconds: 10
+  message: "&7You haven't voted today! Support the server with &d/vote &7and earn rewards."
+
+# ── MISC ─────────────────────────────────────────────────────────────────────
+update-check:
+  enabled: true
+  repo: "DankMinecraftServers/DankVotes"
+# Anonymous usage stats via bStats (helps the developers; no player data).
+metrics: true
+# Extra logging for troubleshooting.
+debug: false
+
+# ── MESSAGES ─────────────────────────────────────────────────────────────────
+messages:
+  prefix: "&8[&dDankVotes&8] &7"
+  no-permission: "&cYou don't have permission to do that."
+  player-only: "&cThat command can only be used by a player."
+  player-not-found: "&cNo vote data found for &f%player%&c."
+  vote-header: "&8&m----------&r &d&lVOTE &8&m----------"
+  vote-line: "&d» &f%name%&7: &b%url%"
+  vote-footer: "&7Vote daily to earn rewards! Your total: &d%votes% &7| Streak: &d%streak% &7days"
+  vote-no-links: "&7No vote links have been configured yet."
+  votes-self: "&7You have voted &d%votes% &7times (&d%streak%&7-day streak, best &d%best_streak%&7)."
+  votes-other: "&d%player% &7has voted &d%votes% &7times (&d%streak%&7-day streak, best &d%best_streak%&7)."
+  votetop-header: "&8&m--------&r &d&lTOP VOTERS &8&m--------"
+  votetop-line: "&7#%rank% &d%player% &8- &f%votes% votes"
+  votetop-empty: "&7Nobody has voted yet. Be the first with &d/vote&7!"
+  voteparty-status: "&7Vote party: &d%party_progress%&7/&d%party_goal% &7votes (&d%party_remaining% &7to go)"
+  voteparty-disabled: "&7Vote parties are not enabled on this server."
+  reloaded: "&aDankVotes configuration reloaded."
+  test-vote: "&aSimulated a vote for &d%player%&a."
+  votes-set: "&aSet &d%player%&a's vote count to &d%votes%&a."
+  votes-reset: "&aReset vote data for &d%player%&a."
+  party-forced: "&aForced a vote party."
+  usage: "&7Usage: &f%usage%"

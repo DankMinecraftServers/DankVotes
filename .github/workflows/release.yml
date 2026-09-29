@@ -1,0 +1,46 @@
+name: Release
+
+# Tag a commit as vX.Y.Z (e.g. `git tag v1.0.0 && git push --tags`) to build the jar
+# and publish a GitHub Release with it attached. Release notes are generated from the
+# commits/PRs since the previous tag.
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Verify tag matches pom version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          POM=$(mvn -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+          echo "tag=$TAG pom=$POM"
+          if [ "$TAG" != "$POM" ]; then
+            echo "::error::Tag v$TAG does not match pom.xml version $POM. Bump the version (see CONTRIBUTING.md) and re-tag."
+            exit 1
+          fi
+
+      - name: Build with Maven
+        run: mvn -B -ntp clean package
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/target/DankVotes-*.jar
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -1,0 +1,46 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: DankVotes version
+      description: Output of /dankvotes version
+      placeholder: "1.0.0"
+    validations: { required: true }
+  - type: input
+    id: server
+    attributes:
+      label: Server software & Minecraft version
+      placeholder: "Paper 1.21.4 / Folia / Velocity 3.4"
+    validations: { required: true }
+  - type: dropdown
+    id: source
+    attributes:
+      label: How do votes reach the server?
+      multiple: true
+      options: [ Polling (DankMinecraftServers), Built-in Votifier listener, NuVotifier hook ]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations: { required: true }
+  - type: textarea
+    id: status
+    attributes:
+      label: /dankvotes status output
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: Startup lines mentioning DankVotes, and any errors. Remove your api-token / votifier token!
+      render: text
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config.yml section
+      description: Remove tokens before pasting.
+      render: yaml

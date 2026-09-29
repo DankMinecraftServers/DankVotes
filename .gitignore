@@ -1,0 +1,22 @@
+# Build output
+target/
+*/target/
+*.jar
+!.mvn/wrapper/*.jar
+
+# IDEs
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local test servers (keep your test server out of the repo)
+run/
+test-server/

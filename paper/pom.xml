@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.dankmc</groupId>
+        <artifactId>dankvotes-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>dankvotes-paper</artifactId>
+    <packaging>jar</packaging>
+
+    <!--
+      Spigot/Paper/Purpur/Folia half. Compiled to Java 8 bytecode against the Spigot
+      1.8.8 API so it loads on Minecraft 1.8 - 26.1.2 (and Folia). This module produces
+      a PLAIN jar of just its own classes; the final single distributable jar is
+      assembled by the :dist module, which merges core + paper + velocity together.
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>com.dankmc</groupId>
+            <artifactId>dankvotes-core</artifactId>
+            <version>1.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.spigotmc</groupId>
+            <artifactId>spigot-api</artifactId>
+            <version>1.8.8-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Optional integration: only used when PlaceholderAPI is installed at runtime. -->
+        <dependency>
+            <groupId>me.clip</groupId>
+            <artifactId>placeholderapi</artifactId>
+            <version>2.11.6</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Anonymous usage metrics. Shaded + relocated by the dist module. -->
+        <dependency>
+            <groupId>org.bstats</groupId>
+            <artifactId>bstats-bukkit</artifactId>
+            <version>3.0.2</version>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>8</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
