@@ -19,7 +19,10 @@ import org.yaml.snakeyaml.Yaml;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -28,6 +31,9 @@ import java.util.Map;
  * Use this on a BungeeCord network for network-wide vote handling: announcements, streaks,
  * /vote, /votetop and proxy-level reward commands. For in-world rewards (items, crates)
  * run the same jar on the backend servers too.
+ *
+ * Commands run through the shared {@link CommandHandler}; only the ones config.yml switches
+ * on are registered.
  */
 public final class DankVotesBungee extends Plugin implements Listener {
 
@@ -45,9 +51,7 @@ public final class DankVotesBungee extends Plugin implements Listener {
                 @Override public void run() { restartCore(); }
             },
             platformName());
-        for (String[] names : CommandHandler.COMMANDS) {
-            getProxy().getPluginManager().registerCommand(this, new BungeeCommand(names));
-        }
+        registerCommands(core.getConfig());
         getProxy().getPluginManager().registerListener(this, this);
         getLogger().info("DankVotes " + getDescription().getVersion() + " enabled on " + platformName() + ".");
     }
@@ -72,6 +76,59 @@ public final class DankVotesBungee extends Plugin implements Listener {
         if (c != null && event.getServer() != null && event.getServer().getInfo() != null) {
             c.getForwarder().onPlayerServer(event.getPlayer().getName(), event.getServer().getInfo().getName());
         }
+    }
+
+    /**
+     * Register the commands config.yml switches on. Proxy commands are matched before the
+     * backend servers' own, so one left on here would hide, say, a backend's /vote.
+     */
+    private void registerCommands(DankVotesConfig config) {
+        List<String> registered = new ArrayList<String>();
+        for (String[] names : CommandHandler.enabledCommands(config)) {
+            if (!names[0].equals("dankvotes")) warnIfTaken(names);
+            getProxy().getPluginManager().registerCommand(this, new BungeeCommand(names));
+            registered.add(names[0]);
+        }
+        commands.setRegistered(registered);
+        getLogger().info(CommandHandler.registrationSummary(config));
+    }
+
+    /**
+     * BungeeCord lets the newest registration of a name win, so say when DankVotes takes one
+     * over. PluginManager#getCommands() only exists in builds from 2017 on, hence reflection.
+     */
+    private void warnIfTaken(String[] names) {
+        Collection<?> existing;
+        try {
+            Object pm = getProxy().getPluginManager();
+            Object all = pm.getClass().getMethod("getCommands").invoke(pm);
+            if (!(all instanceof Collection)) return;
+            existing = (Collection<?>) all;
+        } catch (Throwable t) {
+            return;
+        }
+        List<String> wanted = Arrays.asList(names);
+        List<String> taken = new ArrayList<String>();
+        for (Object o : existing) {
+            if (!(o instanceof Map.Entry)) continue;
+            Object label = ((Map.Entry<?, ?>) o).getKey();
+            if (label != null && wanted.contains(String.valueOf(label).toLowerCase(java.util.Locale.ROOT))) {
+                taken.add("/" + label);
+            }
+        }
+        if (!taken.isEmpty()) {
+            getLogger().warning(join(taken) + " already belongs to another plugin on this proxy; DankVotes's /" + names[0]
+                + " replaces it. To keep the other one, set commands." + names[0] + ": false in config.yml and restart.");
+        }
+    }
+
+    private static String join(List<String> parts) {
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(p);
+        }
+        return sb.toString();
     }
 
     private synchronized void startCore() {

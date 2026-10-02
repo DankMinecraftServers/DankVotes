@@ -27,6 +27,7 @@ public final class CommandText {
     public String noPermission() { return m.prefix + m.noPermission; }
     public String playerOnly() { return m.prefix + m.playerOnly; }
     public String usage(String usage) { return m.prefix + m.usage.replace("%usage%", usage); }
+    public String commandDisabled() { return m.prefix + m.commandDisabled; }
 
     /** /vote - show the configured vote links. */
     public List<String> vote(String viewer) {
@@ -39,7 +40,7 @@ public final class CommandText {
                 out.add(m.voteLine.replace("%name%", link.name).replace("%url%", link.url));
             }
         }
-        if (viewer != null) {
+        if (viewer != null && !Strings.isBlank(m.voteFooter)) {
             out.add(fill(m.voteFooter, viewer));
         }
         return out;
@@ -106,12 +107,30 @@ public final class CommandText {
             + (cfg.votifierEnabled ? " &8| &7received: &f" + v.getTotalReceived() : ""));
         out.addAll(core.getForwarder().statusLines());
         out.add("&7NuVotifier hook: " + (cfg.nuVotifierHookEnabled ? "&aenabled" : "&7disabled")
-            + " &8| &7Reminders: " + (cfg.reminderEnabled ? "&aon" : "&7off")
-            + " &8| &7Streaks: " + (cfg.streaksEnabled ? "&aon" : "&7off"));
-        out.add("&7Total votes: &f" + storage.getTotalVotes() + " &8| &7Players: &f" + storage.getPlayerCount()
-            + " &8| &7Queued offline: &f" + storage.getQueuedVoteCount());
+            + " &8| &7Offline votes: " + (!cfg.offlineVotes ? "&cignored"
+                : "&acounted" + (!cfg.rewardsEnabled ? "" : cfg.queueOfflineVotes ? " &7(rewards saved for next join)" : " &7(rewards run at once)")));
+        out.add("&7Statistics: " + onOff(cfg.statisticsEnabled)
+            + (cfg.statisticsEnabled ? " &7(streaks " + (cfg.streaksEnabled ? "on" : "off") + ")" : "")
+            + " &8| &7Rewards: " + onOff(cfg.rewardsEnabled)
+            + " &8| &7Vote messages: " + onOff(cfg.voteMessagesEnabled)
+            + " &8| &7Reminders: " + onOff(cfg.reminderEnabled)
+            + " &8| &7Vote party: " + onOff(cfg.votePartyEnabled));
+        if (cfg.statisticsEnabled || cfg.rewardsEnabled) {
+            String counts = cfg.statisticsEnabled
+                ? "&7Total votes: &f" + storage.getTotalVotes() + " &8| &7Players: &f" + storage.getPlayerCount()
+                : "";
+            String queued = cfg.rewardsEnabled ? "&7Queued offline: &f" + storage.getQueuedVoteCount() : "";
+            out.add(counts + (!counts.isEmpty() && !queued.isEmpty() ? " &8| " : "") + queued);
+        }
         if (cfg.votePartyEnabled) {
             out.add("&7Vote party: &f" + storage.getPartyProgress() + "&7/&f" + cfg.votePartyGoal);
+        }
+        List<String> off = new ArrayList<String>();
+        for (String[] names : CommandHandler.COMMANDS) {
+            if (!cfg.commandEnabled(names[0])) off.add("/" + names[0]);
+        }
+        if (!off.isEmpty()) {
+            out.add("&7Commands turned off: &f" + join(off, " "));
         }
         String update = core.getUpdateChecker().getAvailableUpdate();
         if (update != null) {
@@ -133,17 +152,48 @@ public final class CommandText {
         return out;
     }
 
+    /** /dankvotes help: only the commands that are switched on. */
     public String help(boolean admin) {
-        StringBuilder sb = new StringBuilder(m.prefix).append("&7/vote &8- &7vote links &8| &7/votes [player] &8| &7/votetop [page] &8| &7/voteparty");
+        List<String> player = new ArrayList<String>();
+        if (cfg.commandEnabled("vote")) player.add("&7/vote &8- &7vote links");
+        if (cfg.commandEnabled("votes")) player.add("&7/votes [player]");
+        if (cfg.commandEnabled("votetop")) player.add("&7/votetop [page]");
+        if (cfg.commandEnabled("voteparty")) player.add("&7/voteparty");
+        StringBuilder sb = new StringBuilder();
+        if (!player.isEmpty()) sb.append(m.prefix).append(join(player, " &8| "));
         if (admin) {
-            sb.append("\n").append(m.prefix).append("&7Admin: &f/dankvotes reload &8| &fstatus &8| &ftest <player> &8| &fsetvotes <player> <n> &8| &freset <player> &8| &fparty &8| &fkey");
+            List<String> subs = new ArrayList<String>();
+            subs.add("&f/dankvotes reload");
+            subs.add("&fstatus");
+            subs.add("&ftest <player>");
+            if (cfg.subcommandEnabled("setvotes")) subs.add("&fsetvotes|addvotes <player> <n>");
+            if (cfg.subcommandEnabled("reset")) subs.add("&freset <player>");
+            if (cfg.subcommandEnabled("party")) subs.add("&fparty");
+            subs.add("&fkey");
+            if (sb.length() > 0) sb.append("\n");
+            sb.append(m.prefix).append("&7Admin: ").append(join(subs, " &8| "));
+        }
+        if (sb.length() == 0) {
+            sb.append(m.prefix).append("&7DankVotes &fv").append(core.getPlatform().getPluginVersion());
         }
         return sb.toString();
     }
 
     private String fill(String template, String player) {
-        Vote ctx = new Vote(player, "", "", 0L, true, 0);
-        return core.getEngine().applyPlaceholders(template, ctx, storage.getVoteCount(player), storage.getStreak(player));
+        return core.getEngine().applyPlayerPlaceholders(template, player);
+    }
+
+    private static String onOff(boolean on) {
+        return on ? "&aon" : "&7off";
+    }
+
+    private static String join(List<String> parts, String separator) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) sb.append(separator);
+            sb.append(parts.get(i));
+        }
+        return sb.toString();
     }
 
     private static String ago(long millis) {

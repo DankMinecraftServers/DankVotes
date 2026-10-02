@@ -3,6 +3,63 @@
 All notable changes to DankVotes are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-10-02
+
+Use only the parts of DankVotes you want, next to any other vote plugin.
+
+### Added
+- **`features:` in `config.yml`** switches off vote **statistics** (totals, streaks, the
+  leaderboard and their placeholders), **rewards** (reward commands, milestones, streak
+  rewards and offline saving) and **vote-messages** (the broadcast, thank-you and streak
+  messages). With `reminders.enabled` and `vote-party.enabled`, every part can now be off. A
+  part that is off does nothing at all; votes are still received, duplicate-checked, fired as
+  `DankVoteEvent` (Bukkit) and forwarded, so DankVotes can also just receive votes for another
+  plugin.
+- **`commands:` in `config.yml`** switches off `/vote`, `/votes`, `/votetop`, `/voteparty` and
+  the `/dankvotes setvotes|addvotes`, `reset` and `party` subcommands.
+- On Bukkit servers, a startup notice when another plugin also has one of these command names,
+  naming the plugin and the setting to change, and when one of their aliases (such as `/vp`)
+  belongs to another plugin. Velocity and BungeeCord say when DankVotes takes a name over from
+  another proxy plugin.
+- **`behaviour.offline-votes: false`** ignores votes from players who aren't online when the
+  vote arrives (on a proxy: anywhere on the network). They aren't counted, saved for the next
+  join, rewarded, announced, passed to other plugins or forwarded, and don't add to the vote
+  party. Votes a DankVotes proxy forwards count as the proxy decided.
+- `/dankvotes test` says when the test vote wasn't counted (`messages.test-vote-refused`).
+- `/dankvotes status` shows which parts and commands are off and how offline votes are handled;
+  `/dankvotes reload` says when a command change needs a restart.
+- `messages.command-disabled`, and any vote, vote-party or reminder message set to `""` is no
+  longer sent.
+
+### Changed
+- **Commands that are off are not registered at all**, so another plugin can have the name.
+  That includes `/voteparty` (and `/vp`) while the vote party is off, which is the default,
+  and `/votes` and `/votetop` while statistics are off. On Bukkit servers the player commands
+  are now registered when DankVotes starts instead of being listed in `plugin.yml`; `/dankvotes`
+  is unchanged.
+- A PlaceholderAPI placeholder of a part that is off stays unparsed (`%dankvotes_party_*%` need
+  the vote party, the rest need statistics).
+- With statistics off, the bundled thank-you message and `/vote` footer leave out vote totals,
+  `%votes%`-style placeholders show 0, and DankVotes logs any message or reward that still uses
+  them. The same goes for `%party_*%` placeholders while the vote party is off.
+- `/dankvotes help`, tab completion and the `/dankvotes` usage list only subcommands that are on.
+- Paper and Velocity commands now run through the same shared command handler as BungeeCord
+  and Sponge.
+
+### Fixed
+- **Streak rewards ran once for every vote** on the day a streak reached its number, so a player
+  who voted on three sites got a 7-day streak reward three times (also when the votes were saved
+  for an offline player and replayed on join). They now run once a day, with the player's first
+  vote that day; the streak broadcast too. Saved offline votes now remember which streak day
+  they reached.
+- A vote that arrives late from an earlier day (a delayed delivery) no longer resets the
+  player's streak to 1.
+- With `streaks.enabled: false`, reminders kept reminding players who had already voted that day.
+- A vote dated in the future (a site clock running ahead, or a timestamp in the wrong unit) no
+  longer resets the player's streak or their "voted today" for reminders.
+- After a `/dankvotes reload` that fails, an admin can fix `config.yml` and run
+  `/dankvotes reload` again (BungeeCord and Sponge needed a restart).
+
 ## [1.1.1] - 2026-10-02
 
 ### Added

@@ -44,7 +44,36 @@ public class DankVotesConfig {
     public String forwardingMode = "all";
     public List<ForwardTarget> forwardingServers = new ArrayList<ForwardTarget>();
 
+    // ── Features ─────────────────────────────────────────────────────
+    // Each part can be switched off for servers that leave it to another plugin. A part that
+    // is off does nothing at all; votes are still received, checked, announced to other
+    // plugins (DankVoteEvent on Bukkit) and forwarded.
+    /** Count votes per player: totals, streaks and the leaderboard (/votes, /votetop, placeholders). */
+    public boolean statisticsEnabled = true;
+    /** Run reward commands: per-vote rewards, milestones and streak rewards (saved for offline players). */
+    public boolean rewardsEnabled = true;
+    /** Send the vote broadcast, thank-you and streak messages. */
+    public boolean voteMessagesEnabled = true;
+
+    // ── Commands ─────────────────────────────────────────────────────
+    // A player command that is off is never registered, so another plugin can have the name.
+    public boolean commandVote = true;
+    public boolean commandVotes = true;
+    public boolean commandVoteTop = true;
+    public boolean commandVoteParty = true;
+    // /dankvotes subcommands.
+    public boolean commandSetVotes = true;
+    public boolean commandReset = true;
+    public boolean commandParty = true;
+
     // ── Behaviour ────────────────────────────────────────────────────
+    /**
+     * Count votes from players who aren't online (on this server; on a proxy, the network).
+     * false = such a vote is ignored completely: not counted, saved, rewarded, announced or
+     * forwarded. Votes a DankVotes proxy forwards are counted as the proxy decided.
+     */
+    public boolean offlineVotes = true;
+    /** With offline votes counted: save an offline player's rewards for their next join (false = run them at once). */
     public boolean queueOfflineVotes = true;
     public boolean requireVerified = false;
     public boolean broadcastEnabled = true;
@@ -95,6 +124,55 @@ public class DankVotesConfig {
 
     // ── Messages ─────────────────────────────────────────────────────
     public Messages messages = new Messages();
+
+    // ═════════════════════════════════════════════════════════════════
+    // What is switched on
+    // ═════════════════════════════════════════════════════════════════
+
+    /** Streaks are part of the statistics, so they only run while statistics are on. */
+    public boolean streaksActive() {
+        return statisticsEnabled && streaksEnabled;
+    }
+
+    /**
+     * Whether a command is on, by canonical name (vote, votes, votetop, voteparty, dankvotes).
+     * A command is off when its {@code commands.*} switch is false or the part it shows is off:
+     * /votes and /votetop need statistics, /voteparty needs the vote party. /dankvotes is always on.
+     */
+    public boolean commandEnabled(String command) {
+        return offReason(command) == null;
+    }
+
+    /** Whether a /dankvotes subcommand is on (setvotes/addvotes and reset need statistics, party the vote party). */
+    public boolean subcommandEnabled(String subcommand) {
+        return subcommandOffReason(subcommand) == null;
+    }
+
+    /** The config.yml setting that keeps a command off ("commands.votes: false"), or null when it is on. */
+    public String offReason(String command) {
+        if ("vote".equals(command)) return commandVote ? null : "commands.vote: false";
+        if ("votes".equals(command)) return !commandVotes ? "commands.votes: false" : statisticsOff();
+        if ("votetop".equals(command)) return !commandVoteTop ? "commands.votetop: false" : statisticsOff();
+        if ("voteparty".equals(command)) return !commandVoteParty ? "commands.voteparty: false" : votePartyOff();
+        return null;
+    }
+
+    /** The config.yml setting that keeps a /dankvotes subcommand off, or null when it is on. */
+    public String subcommandOffReason(String subcommand) {
+        String sub = subcommand == null ? "" : subcommand.toLowerCase(java.util.Locale.ROOT);
+        if (sub.equals("setvotes") || sub.equals("addvotes")) return !commandSetVotes ? "commands.setvotes: false" : statisticsOff();
+        if (sub.equals("reset")) return !commandReset ? "commands.reset: false" : statisticsOff();
+        if (sub.equals("party")) return !commandParty ? "commands.party: false" : votePartyOff();
+        return null;
+    }
+
+    private String statisticsOff() {
+        return statisticsEnabled ? null : "features.statistics: false";
+    }
+
+    private String votePartyOff() {
+        return votePartyEnabled ? null : "vote-party.enabled: false";
+    }
 
     // ═════════════════════════════════════════════════════════════════
     // Nested types
@@ -159,6 +237,7 @@ public class DankVotesConfig {
         public String noPermission = "&cYou don't have permission to do that.";
         public String playerOnly = "&cThat command can only be used by a player.";
         public String playerNotFound = "&cNo vote data found for &f%player%&c.";
+        public String commandDisabled = "&cThat command is turned off on this server.";
 
         // /vote
         public String voteHeader = "&8&m----------&r &d&lVOTE &8&m----------";
@@ -182,6 +261,7 @@ public class DankVotesConfig {
         // admin
         public String reloaded = "&aDankVotes configuration reloaded.";
         public String testVote = "&aSimulated a vote for &d%player%&a.";
+        public String testVoteRefused = "&cThe test vote for &f%player% &cwas not counted - the console says why.";
         public String votesSet = "&aSet &d%player%&a's vote count to &d%votes%&a.";
         public String votesReset = "&aReset vote data for &d%player%&a.";
         public String partyForced = "&aForced a vote party.";

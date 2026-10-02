@@ -52,11 +52,10 @@ public class VoteReminder {
     }
 
     private void remind(String username) {
+        if (Strings.isBlank(config.reminderMessage)) return;
         if (!platform.isPlayerOnline(username)) return;
         if (storage.hasVotedToday(username)) return;
         if (platform.hasPermission(username, BYPASS_PERMISSION)) return;
-        Vote ctx = new Vote(username, "", "", System.currentTimeMillis(), true, 0);
-        platform.messagePlayer(username, engine.applyPlaceholders(config.reminderMessage, ctx,
-            storage.getVoteCount(username), storage.getStreak(username)));
+        platform.messagePlayer(username, engine.applyPlayerPlaceholders(config.reminderMessage, username));
     }
 }

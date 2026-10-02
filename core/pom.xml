@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.dankmc</groupId>
         <artifactId>dankvotes-parent</artifactId>
-        <version>1.1.1</version>
+        <version>1.2.0</version>
     </parent>
 
     <artifactId>dankvotes-core</artifactId>

@@ -1,12 +1,12 @@
 package com.dankmc.dankvotes.paper;
 
-import com.dankmc.dankvotes.core.CommandText;
+import com.dankmc.dankvotes.core.CommandHandler;
 import com.dankmc.dankvotes.core.DankVotesConfig;
 import com.dankmc.dankvotes.core.DankVotesCore;
 import com.dankmc.dankvotes.core.DefaultConfig;
-import com.dankmc.dankvotes.core.Vote;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -14,8 +14,6 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -25,21 +23,16 @@ import java.util.List;
  * Mohist and Arclight, and Folia, from Minecraft 1.7.10 to the latest release. Receives votes
  * via outbound polling (no port forwarding), the inbound Votifier v1/v2 protocol, or an
  * existing NuVotifier install, then runs fully customizable in-game rewards.
+ *
+ * Commands run through the shared {@link CommandHandler}, so they behave exactly as on the
+ * other platforms. Only /dankvotes is in plugin.yml; the player commands are registered at
+ * startup when config.yml switches them on (see {@link BukkitCommands}).
  */
 public class DankVotesPaper extends JavaPlugin implements Listener {
 
-    private static final String PERM_ADMIN = "dankvotes.admin";
-    private static final String PERM_VOTE = "dankvotes.vote";
-    private static final String PERM_VOTES = "dankvotes.votes";
-    private static final String PERM_VOTES_OTHERS = "dankvotes.votes.others";
-    private static final String PERM_VOTETOP = "dankvotes.votetop";
-    private static final String PERM_VOTEPARTY = "dankvotes.voteparty";
-
-    private static final List<String> ADMIN_SUBS = Arrays.asList(
-        "help", "reload", "status", "test", "setvotes", "addvotes", "reset", "party", "key", "version");
-
-    private DankVotesCore core;
-    private CommandText text;
+    private volatile DankVotesCore core;
+    private CommandHandler commands;
+    private BukkitCommands playerCommands;
     private boolean nuVotifierHooked;
     private boolean placeholdersHooked;
     private Object metrics;
@@ -48,20 +41,33 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
     public void onEnable() {
         DefaultConfig.saveIfMissing(getDataFolder(), DankVotesPaper.class, getLogger());
         startCore();
+        commands = new CommandHandler(
+            new CommandHandler.CoreAccess() {
+                @Override public DankVotesCore core() { return core; }
+            },
+            new Runnable() {
+                @Override public void run() { reload(); }
+            },
+            null);
+        registerCommands();
 
         getServer().getPluginManager().registerEvents(this, this);
 
         // Optional integrations - each is a no-op when the other plugin is absent.
-        if (core.getConfig().nuVotifierHookEnabled) {
+        DankVotesConfig config = core.getConfig();
+        if (config.nuVotifierHookEnabled) {
             try {
                 nuVotifierHooked = NuVotifierHook.register(this);
                 if (nuVotifierHooked) {
                     getLogger().info("Hooked into NuVotifier: votes it receives will be rewarded by DankVotes.");
+                    warnIfForwardingToSelf(config);
                 }
             } catch (Throwable t) {
                 getLogger().warning("Could not hook NuVotifier: " + t.getMessage());
             }
         }
+        // Registered even with statistics and the vote party off: those placeholders then stay
+        // unparsed, and turning a part back on with /dankvotes reload needs no restart.
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             try {
                 placeholdersHooked = new PlaceholderHook(this).register();
@@ -70,7 +76,7 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
                 getLogger().warning("Could not register PlaceholderAPI expansion: " + t.getMessage());
             }
         }
-        if (core.getConfig().metricsEnabled) {
+        if (config.metricsEnabled) {
             try {
                 metrics = MetricsHook.start(this);
             } catch (Throwable ignored) {
@@ -83,13 +89,18 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        if (playerCommands != null) {
+            playerCommands.unregister();
+            playerCommands = null;
+        }
         SchedulerAdapter scheduler = null;
-        if (core != null) {
-            if (core.getPlatform() instanceof PaperPlatform) {
-                scheduler = ((PaperPlatform) core.getPlatform()).getScheduler();
+        DankVotesCore c = core;
+        core = null;
+        if (c != null) {
+            if (c.getPlatform() instanceof PaperPlatform) {
+                scheduler = ((PaperPlatform) c.getPlatform()).getScheduler();
             }
-            core.stop();
-            core = null;
+            c.stop();
         }
         if (metrics != null) {
             try { MetricsHook.stop(metrics); } catch (Throwable ignored) {}
@@ -101,16 +112,68 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
     /** Folia runs commands on several threads at once, so two reloads must not interleave. */
     private synchronized void reload() {
         reloadConfig();
-        if (core != null) core.stop();
+        DankVotesCore old = core;
+        core = null;
+        if (old != null) old.stop();
         startCore();
     }
 
     private void startCore() {
         DankVotesConfig config = PaperConfigLoader.load(getConfig());
-        PaperPlatform platform = new PaperPlatform(this);
-        core = new DankVotesCore(platform, config);
-        text = new CommandText(core);
-        core.start();
+        DankVotesCore c = new DankVotesCore(new PaperPlatform(this), config);
+        c.start();
+        core = c;
+    }
+
+    /**
+     * /dankvotes comes from plugin.yml; the player commands are registered here, and only the
+     * ones config.yml switches on, so a command that is off stays free for other plugins.
+     */
+    private void registerCommands() {
+        DankVotesConfig config = core.getConfig();
+        List<String[]> wanted = CommandHandler.enabledCommands(config);
+        PluginCommand admin = getCommand("dankvotes");
+        if (admin != null) {
+            // plugin.yml lists every subcommand; /help should show only the ones that are on.
+            admin.setUsage("/dankvotes " + CommandHandler.arguments("dankvotes", config));
+        }
+        playerCommands = new BukkitCommands(this);
+        List<String> registered = new ArrayList<String>();
+        registered.add("dankvotes");
+        if (playerCommands.available()) {
+            registered.addAll(playerCommands.register(wanted));
+            getLogger().info(CommandHandler.registrationSummary(config));
+            // Plugins that start after DankVotes may want the same names; check once all have started.
+            if (core.getPlatform() instanceof PaperPlatform) {
+                ((PaperPlatform) core.getPlatform()).getScheduler().runGlobal(new Runnable() {
+                    @Override public void run() {
+                        BukkitCommands pc = playerCommands;
+                        if (pc != null) pc.reportClashes(getLogger());
+                    }
+                });
+            }
+        } else if (wanted.size() > 1) {
+            getLogger().severe("Could not reach the server's command map, so /vote, /votes, /votetop and /voteparty "
+                + "are unavailable. Please report this with your server version.");
+        }
+        commands.setRegistered(registered);
+    }
+
+    /**
+     * Forwarding to this machine while the NuVotifier hook is on: when the target is this
+     * server's own NuVotifier (to feed a plugin that listens to it), each vote would come back
+     * into DankVotes through the hook and be forwarded again.
+     */
+    private void warnIfForwardingToSelf(DankVotesConfig config) {
+        if (!config.forwardingEnabled) return;
+        for (DankVotesConfig.ForwardTarget t : config.forwardingServers) {
+            String host = t.host.trim().toLowerCase(java.util.Locale.ROOT);
+            if (host.equals("localhost") || host.startsWith("127.") || host.equals("::1") || host.equals("0.0.0.0")) {
+                getLogger().warning("forwarding sends votes to " + t.host + ":" + t.port + " while nuvotifier-hook is on. "
+                    + "If that is this server's own NuVotifier, set nuvotifier-hook: false, or each vote comes back into DankVotes.");
+                return;
+            }
+        }
     }
 
     /** The active core (null while disabled). Hooks call this so /dankvotes reload is safe. */
@@ -121,187 +184,60 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        if (core != null) core.onPlayerJoin(event.getPlayer().getName());
+        DankVotesCore c = core;
+        if (c != null) c.onPlayerJoin(event.getPlayer().getName());
     }
 
     // ── Commands ─────────────────────────────────────────────────────
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (core == null) {
+        CommandHandler handler = commands;
+        if (handler == null) {
             sender.sendMessage(PaperPlatform.color("&cDankVotes is not running."));
             return true;
         }
-        String name = command.getName().toLowerCase();
-        if (name.equals("vote")) return cmdVote(sender);
-        if (name.equals("votes")) return cmdVotes(sender, args);
-        if (name.equals("votetop")) return cmdVoteTop(sender, args);
-        if (name.equals("voteparty")) return cmdVoteParty(sender);
-        if (name.equals("dankvotes")) return cmdAdmin(sender, args);
-        return false;
-    }
-
-    private boolean cmdVote(CommandSender sender) {
-        if (!sender.hasPermission(PERM_VOTE)) return deny(sender);
-        String viewer = sender instanceof Player ? ((Player) sender).getName() : null;
-        send(sender, text.vote(viewer));
-        return true;
-    }
-
-    private boolean cmdVotes(CommandSender sender, String[] args) {
-        if (!sender.hasPermission(PERM_VOTES)) return deny(sender);
-        String viewer = sender instanceof Player ? ((Player) sender).getName() : "CONSOLE";
-        String target = args.length > 0 ? args[0] : null;
-        if (target == null && !(sender instanceof Player)) {
-            sender.sendMessage(PaperPlatform.color(text.usage("/votes <player>")));
-            return true;
-        }
-        if (target != null && !target.equalsIgnoreCase(viewer) && !sender.hasPermission(PERM_VOTES_OTHERS)) {
-            return deny(sender);
-        }
-        sender.sendMessage(PaperPlatform.color(text.votes(viewer, target)));
-        return true;
-    }
-
-    private boolean cmdVoteTop(CommandSender sender, String[] args) {
-        if (!sender.hasPermission(PERM_VOTETOP)) return deny(sender);
-        int page = 1;
-        if (args.length > 0) {
-            try { page = Integer.parseInt(args[0]); } catch (NumberFormatException ignored) {}
-        }
-        send(sender, text.voteTop(page, 10));
-        return true;
-    }
-
-    private boolean cmdVoteParty(CommandSender sender) {
-        if (!sender.hasPermission(PERM_VOTEPARTY)) return deny(sender);
-        sender.sendMessage(PaperPlatform.color(text.voteParty()));
-        return true;
-    }
-
-    private boolean cmdAdmin(CommandSender sender, String[] args) {
-        if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
-            for (String line : text.help(sender.hasPermission(PERM_ADMIN)).split("\n")) {
-                sender.sendMessage(PaperPlatform.color(line));
-            }
-            return true;
-        }
-        if (!sender.hasPermission(PERM_ADMIN)) return deny(sender);
-
-        String sub = args[0].toLowerCase();
-        DankVotesConfig.Messages m = core.getConfig().messages;
-
-        if (sub.equals("reload")) {
-            reload();
-            sender.sendMessage(PaperPlatform.color(m.prefix + m.reloaded));
-            return true;
-        }
-        if (sub.equals("status")) {
-            send(sender, text.status());
-            return true;
-        }
-        if (sub.equals("version")) {
-            sender.sendMessage(PaperPlatform.color(m.prefix + "&7DankVotes &fv" + getDescription().getVersion()
-                + " &7on &f" + core.getPlatform().getPlatformName()));
-            return true;
-        }
-        if (sub.equals("key")) {
-            send(sender, text.key());
-            return true;
-        }
-        if (sub.equals("party")) {
-            core.getEngine().forceVoteParty();
-            sender.sendMessage(PaperPlatform.color(m.prefix + m.partyForced));
-            return true;
-        }
-        if (sub.equals("test")) {
-            String target = args.length > 1 ? args[1]
-                : (sender instanceof Player ? ((Player) sender).getName() : "TestPlayer");
-            core.getEngine().processVote(new Vote(target, "test", "127.0.0.1", System.currentTimeMillis(), true, 0));
-            sender.sendMessage(PaperPlatform.color(m.prefix + m.testVote.replace("%player%", target)));
-            return true;
-        }
-        if (sub.equals("setvotes") || sub.equals("addvotes")) {
-            if (args.length < 3) {
-                sender.sendMessage(PaperPlatform.color(text.usage("/dankvotes " + sub + " <player> <amount>")));
-                return true;
-            }
-            int n;
-            try { n = Integer.parseInt(args[2]); } catch (NumberFormatException e) {
-                sender.sendMessage(PaperPlatform.color(text.usage("/dankvotes " + sub + " <player> <amount>")));
-                return true;
-            }
-            int current = core.getStorage().getVoteCount(args[1]);
-            int value = sub.equals("setvotes") ? n : current + n;
-            core.getStorage().setVoteCount(args[1], value);
-            core.getStorage().flush();
-            sender.sendMessage(PaperPlatform.color(m.prefix + m.votesSet
-                .replace("%player%", args[1]).replace("%votes%", String.valueOf(Math.max(0, value)))));
-            return true;
-        }
-        if (sub.equals("reset")) {
-            if (args.length < 2) {
-                sender.sendMessage(PaperPlatform.color(text.usage("/dankvotes reset <player>")));
-                return true;
-            }
-            core.getStorage().resetPlayer(args[1]);
-            core.getStorage().flush();
-            sender.sendMessage(PaperPlatform.color(m.prefix + m.votesReset.replace("%player%", args[1])));
-            return true;
-        }
-        sender.sendMessage(PaperPlatform.color(text.usage("/dankvotes <" + join(ADMIN_SUBS) + ">")));
+        handler.execute(command.getName(), new BukkitSender(sender), args);
         return true;
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        String name = command.getName().toLowerCase();
-        if (name.equals("votes")) {
-            return args.length == 1 && sender.hasPermission(PERM_VOTES_OTHERS) ? onlineNames(args[0]) : Collections.<String>emptyList();
-        }
-        if (name.equals("dankvotes") && sender.hasPermission(PERM_ADMIN)) {
-            if (args.length == 1) return filter(ADMIN_SUBS, args[0]);
-            if (args.length == 2) {
-                String sub = args[0].toLowerCase();
-                if (sub.equals("test") || sub.equals("setvotes") || sub.equals("addvotes") || sub.equals("reset")) {
-                    return onlineNames(args[1]);
-                }
-            }
-        }
-        return Collections.<String>emptyList();
-    }
-
-    // ── Helpers ──────────────────────────────────────────────────────
-
-    private boolean deny(CommandSender sender) {
-        sender.sendMessage(PaperPlatform.color(text.noPermission()));
-        return true;
-    }
-
-    private void send(CommandSender sender, List<String> lines) {
-        for (String line : lines) sender.sendMessage(PaperPlatform.color(line));
-    }
-
-    private static List<String> onlineNames(String prefix) {
+        CommandHandler handler = commands;
+        if (handler == null) return new ArrayList<String>();
         List<String> names = new ArrayList<String>();
         for (Player p : BukkitCompat.onlinePlayers()) names.add(p.getName());
-        return filter(names, prefix);
+        return handler.complete(command.getName(), new BukkitSender(sender), args, names);
     }
 
-    private static List<String> filter(List<String> options, String prefix) {
-        List<String> out = new ArrayList<String>();
-        String p = prefix == null ? "" : prefix.toLowerCase();
-        for (String o : options) if (o.toLowerCase().startsWith(p)) out.add(o);
-        Collections.sort(out);
-        return out;
-    }
+    /** A Bukkit command sender as the shared command handler sees it. */
+    private static final class BukkitSender implements CommandHandler.Sender {
 
-    private static String join(List<String> parts) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < parts.size(); i++) {
-            if (i > 0) sb.append('|');
-            sb.append(parts.get(i));
+        private final CommandSender sender;
+
+        BukkitSender(CommandSender sender) {
+            this.sender = sender;
         }
-        return sb.toString();
+
+        @Override
+        public String playerName() {
+            return sender instanceof Player ? ((Player) sender).getName() : null;
+        }
+
+        @Override
+        public boolean hasPermission(String permission) {
+            return sender.hasPermission(permission);
+        }
+
+        /** Bukkit applies plugin.yml's "default: true" itself, so a plain check is right. */
+        @Override
+        public boolean allowedByDefault(String permission) {
+            return sender.hasPermission(permission);
+        }
+
+        @Override
+        public void sendLegacy(String line) {
+            sender.sendMessage(PaperPlatform.color(line));
+        }
     }
 }

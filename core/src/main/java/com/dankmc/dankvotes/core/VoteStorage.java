@@ -93,29 +93,72 @@ public class VoteStorage {
         return d;
     }
 
+    /** What counting one vote changed. */
+    public static final class Recorded {
+        /** The player's new cumulative vote count. */
+        public final int votes;
+        /** The day streak this vote moved the player to, or 0 when it didn't move it. */
+        public final int streakDay;
+
+        Recorded(int votes, int streakDay) {
+            this.votes = votes;
+            this.streakDay = streakDay;
+        }
+    }
+
     /**
      * Count a vote for the player: increments their total, updates their day-streak,
      * and bumps the server-wide total. Returns the player's NEW cumulative count.
      */
     public synchronized int recordVote(String username, long timestampMillis, boolean trackStreak) {
+        return countVote(username, timestampMillis, trackStreak).votes;
+    }
+
+    /**
+     * Like {@link #recordVote}, also saying whether this vote moved the day streak. Only the
+     * player's first vote of a new day does: more votes that day (other sites) leave it where
+     * it is, and so does a vote that arrives late from an earlier day, instead of resetting it.
+     */
+    public synchronized Recorded countVote(String username, long timestampMillis, boolean trackStreak) {
+        long ts = notInFuture(timestampMillis);
         PlayerData d = data(username);
         d.votes++;
-        d.lastVoteTime = Math.max(d.lastVoteTime, timestampMillis);
+        d.lastVoteTime = Math.max(d.lastVoteTime, ts);
+        int streakDay = 0;
         if (trackStreak) {
-            long today = epochDay(timestampMillis);
-            if (d.lastVoteDay == today) {
-                // Same day: streak unchanged
-            } else if (d.lastVoteDay == today - 1) {
-                d.streak++;
-            } else {
-                d.streak = 1;
+            long day = epochDay(ts);
+            // A day in the future can only come from a bad timestamp saved by an older version;
+            // treat it as today, or the streak could never move again.
+            long today = epochDay(System.currentTimeMillis());
+            if (d.lastVoteDay > today) d.lastVoteDay = today;
+            if (day > d.lastVoteDay) {
+                d.streak = d.lastVoteDay == day - 1 ? d.streak + 1 : 1;
+                if (d.streak > d.bestStreak) d.bestStreak = d.streak;
+                d.lastVoteDay = day;
+                streakDay = d.streak;
             }
-            if (d.streak > d.bestStreak) d.bestStreak = d.streak;
-            d.lastVoteDay = today;
         }
         totalVotes.incrementAndGet();
         markDirty();
-        return d.votes;
+        return new Recorded(d.votes, streakDay);
+    }
+
+    /**
+     * Remember only when the player last voted, without counting the vote. Used while
+     * statistics are off so reminders still know who has voted today.
+     */
+    public synchronized void markVoted(String username, long timestampMillis) {
+        PlayerData d = data(username);
+        d.lastVoteTime = Math.max(d.lastVoteTime, notInFuture(timestampMillis));
+        markDirty();
+    }
+
+    /**
+     * A vote can't have happened after it arrived: a site clock running ahead, or a timestamp in
+     * the wrong unit, would otherwise pin "last voted" in the future and break "voted today".
+     */
+    private static long notInFuture(long timestampMillis) {
+        return Math.min(timestampMillis, System.currentTimeMillis());
     }
 
     public int getVoteCount(String username) {
@@ -137,9 +180,15 @@ public class VoteStorage {
         return d == null ? 0 : d.bestStreak;
     }
 
+    /**
+     * True if the player's last vote was today. Checks the vote time as well as the streak day,
+     * which is only kept while streaks are on (otherwise reminders nagged players who had voted).
+     */
     public boolean hasVotedToday(String username) {
         PlayerData d = players.get(username.toLowerCase());
-        return d != null && d.lastVoteDay == epochDay(System.currentTimeMillis());
+        if (d == null) return false;
+        long today = epochDay(System.currentTimeMillis());
+        return d.lastVoteDay == today || (d.lastVoteTime > 0 && epochDay(d.lastVoteTime) == today);
     }
 
     public long getLastVoteTime(String username) {
@@ -315,7 +364,9 @@ public class VoteStorage {
                             v.optLong("timestamp"),
                             v.optBoolean("verified", true),
                             v.optLong("apiId", 0),
-                            v.optInt("voteNumber", 0)
+                            v.optInt("voteNumber", 0),
+                            v.optInt("streakDay", 0),   // absent before 1.2.0: no streak reward on replay
+                            false
                         ));
                     }
                     offlineQueue.put(key, list);
@@ -364,6 +415,7 @@ public class VoteStorage {
                     o.put("verified", v.isVerified());
                     o.put("apiId", v.getApiId());
                     o.put("voteNumber", v.getVoteNumber());
+                    o.put("streakDay", v.getStreakDay());
                     arr.put(o);
                 }
                 queue.put(e.getKey(), arr);

@@ -38,7 +38,21 @@ public final class PaperConfigLoader {
         c.forwardingMode    = yml.getString("forwarding.mode", c.forwardingMode).trim().toLowerCase(java.util.Locale.ROOT);
         c.forwardingServers = ConfigMapper.forwardTargets(yml.getList("forwarding.servers"));
 
+        // ── Features and commands ────────────────────────────────────
+        c.statisticsEnabled   = yml.getBoolean("features.statistics", c.statisticsEnabled);
+        c.rewardsEnabled      = yml.getBoolean("features.rewards", c.rewardsEnabled);
+        c.voteMessagesEnabled = yml.getBoolean("features.vote-messages", c.voteMessagesEnabled);
+
+        c.commandVote      = yml.getBoolean("commands.vote", c.commandVote);
+        c.commandVotes     = yml.getBoolean("commands.votes", c.commandVotes);
+        c.commandVoteTop   = yml.getBoolean("commands.votetop", c.commandVoteTop);
+        c.commandVoteParty = yml.getBoolean("commands.voteparty", c.commandVoteParty);
+        c.commandSetVotes  = yml.getBoolean("commands.setvotes", c.commandSetVotes);
+        c.commandReset     = yml.getBoolean("commands.reset", c.commandReset);
+        c.commandParty     = yml.getBoolean("commands.party", c.commandParty);
+
         // ── Behaviour ────────────────────────────────────────────────
+        c.offlineVotes       = yml.getBoolean("behaviour.offline-votes", c.offlineVotes);
         c.queueOfflineVotes  = yml.getBoolean("behaviour.queue-offline-votes", c.queueOfflineVotes);
         c.requireVerified    = yml.getBoolean("behaviour.require-verified", c.requireVerified);
         c.broadcastEnabled   = yml.getBoolean("behaviour.broadcast.enabled", c.broadcastEnabled);
@@ -88,6 +102,7 @@ public final class PaperConfigLoader {
             m.noPermission      = ms.getString("no-permission", m.noPermission);
             m.playerOnly        = ms.getString("player-only", m.playerOnly);
             m.playerNotFound    = ms.getString("player-not-found", m.playerNotFound);
+            m.commandDisabled   = ms.getString("command-disabled", m.commandDisabled);
             m.voteHeader        = ms.getString("vote-header", m.voteHeader);
             m.voteLine          = ms.getString("vote-line", m.voteLine);
             m.voteFooter        = ms.getString("vote-footer", m.voteFooter);
@@ -101,6 +116,7 @@ public final class PaperConfigLoader {
             m.votePartyDisabled = ms.getString("voteparty-disabled", m.votePartyDisabled);
             m.reloaded          = ms.getString("reloaded", m.reloaded);
             m.testVote          = ms.getString("test-vote", m.testVote);
+            m.testVoteRefused   = ms.getString("test-vote-refused", m.testVoteRefused);
             m.votesSet          = ms.getString("votes-set", m.votesSet);
             m.votesReset        = ms.getString("votes-reset", m.votesReset);
             m.partyForced       = ms.getString("party-forced", m.partyForced);

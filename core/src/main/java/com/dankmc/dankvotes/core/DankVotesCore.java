@@ -21,6 +21,7 @@ public class DankVotesCore {
     public DankVotesCore(Platform platform, DankVotesConfig config) {
         this.platform = platform;
         this.config = config;
+        FeatureReview.applyDefaults(config);
         this.storage = new VoteStorage(platform.getDataFolder());
         this.engine = new RewardEngine(platform, config, storage);
         this.poller = new ApiPoller(platform, config, engine);
@@ -33,6 +34,12 @@ public class DankVotesCore {
     /** Start polling and/or the Votifier listener based on config. */
     public void start() {
         platform.getLogger().info("DankVotes v" + platform.getPluginVersion() + " starting on " + platform.getPlatformName());
+        String off = FeatureReview.summary(config);
+        if (off != null) platform.getLogger().info(off);
+        if (!config.offlineVotes) {
+            platform.getLogger().info("Votes from players who are offline are ignored (behaviour.offline-votes: false).");
+        }
+        for (String warning : FeatureReview.warnings(config)) platform.getLogger().warning(warning);
 
         // Forwarding first, so no vote can arrive before it is ready to pass them on.
         forwarder.start();
@@ -46,7 +53,7 @@ public class DankVotesCore {
             platform.getLogger().warning("Polling, Votifier and the NuVotifier hook are all disabled - "
                 + "DankVotes will not receive any votes! Enable at least one in config.yml.");
         }
-        if (config.voteLinks.isEmpty()) {
+        if (config.voteLinks.isEmpty() && config.commandEnabled("vote")) {
             platform.getLogger().info("Tip: add your vote sites under vote-links in config.yml so /vote shows them to players.");
         }
     }

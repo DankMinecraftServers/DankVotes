@@ -22,6 +22,9 @@ import java.util.List;
  *   %dankvotes_party_remaining%  votes remaining
  *   %dankvotes_top_name_<n>%     name of the n-th top voter (1-based)
  *   %dankvotes_top_votes_<n>%    votes of the n-th top voter
+ *
+ * The party_* placeholders need the vote party on, the rest need statistics on; one whose
+ * part is switched off in config.yml stays unparsed, like an unknown placeholder.
  */
 public class PlaceholderHook extends PlaceholderExpansion {
 
@@ -44,10 +47,16 @@ public class PlaceholderHook extends PlaceholderExpansion {
         String p = params.toLowerCase();
         String name = player == null ? null : player.getName();
 
+        if (p.startsWith("party_")) {
+            if (!core.getConfig().votePartyEnabled) return null;
+            if (p.equals("party_progress")) return String.valueOf(st.getPartyProgress());
+            if (p.equals("party_goal")) return String.valueOf(core.getConfig().votePartyGoal);
+            if (p.equals("party_remaining")) return String.valueOf(Math.max(0, core.getConfig().votePartyGoal - st.getPartyProgress()));
+            return null;
+        }
+        if (!core.getConfig().statisticsEnabled) return null;
+
         if (p.equals("total_votes")) return String.valueOf(st.getTotalVotes());
-        if (p.equals("party_progress")) return String.valueOf(st.getPartyProgress());
-        if (p.equals("party_goal")) return String.valueOf(core.getConfig().votePartyGoal);
-        if (p.equals("party_remaining")) return String.valueOf(Math.max(0, core.getConfig().votePartyGoal - st.getPartyProgress()));
 
         if (p.startsWith("top_name_") || p.startsWith("top_votes_")) {
             boolean wantName = p.startsWith("top_name_");
@@ -61,7 +70,7 @@ public class PlaceholderHook extends PlaceholderExpansion {
 
         if (name == null) return "";
         if (p.equals("votes")) return String.valueOf(st.getVoteCount(name));
-        if (p.equals("streak")) return String.valueOf(st.getStreak(name));
+        if (p.equals("streak")) return String.valueOf(core.getConfig().streaksEnabled ? st.getStreak(name) : 0);
         if (p.equals("best_streak")) return String.valueOf(st.getBestStreak(name));
         if (p.equals("rank")) return String.valueOf(st.getRank(name));
         if (p.equals("voted_today")) return String.valueOf(st.hasVotedToday(name));

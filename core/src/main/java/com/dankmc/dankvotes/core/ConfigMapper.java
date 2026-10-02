@@ -45,8 +45,24 @@ public final class ConfigMapper {
         c.forwardingMode    = str(forwarding, "mode", c.forwardingMode).trim().toLowerCase(java.util.Locale.ROOT);
         c.forwardingServers = forwardTargets(forwarding.get("servers"));
 
+        // ── Features and commands ────────────────────────────────────
+        Map<?, ?> features = section(root, "features");
+        c.statisticsEnabled   = bool(features, "statistics", c.statisticsEnabled);
+        c.rewardsEnabled      = bool(features, "rewards", c.rewardsEnabled);
+        c.voteMessagesEnabled = bool(features, "vote-messages", c.voteMessagesEnabled);
+
+        Map<?, ?> commands = section(root, "commands");
+        c.commandVote      = bool(commands, "vote", c.commandVote);
+        c.commandVotes     = bool(commands, "votes", c.commandVotes);
+        c.commandVoteTop   = bool(commands, "votetop", c.commandVoteTop);
+        c.commandVoteParty = bool(commands, "voteparty", c.commandVoteParty);
+        c.commandSetVotes  = bool(commands, "setvotes", c.commandSetVotes);
+        c.commandReset     = bool(commands, "reset", c.commandReset);
+        c.commandParty     = bool(commands, "party", c.commandParty);
+
         // ── Behaviour ────────────────────────────────────────────────
         Map<?, ?> behaviour = section(root, "behaviour");
+        c.offlineVotes      = bool(behaviour, "offline-votes", c.offlineVotes);
         c.queueOfflineVotes = bool(behaviour, "queue-offline-votes", c.queueOfflineVotes);
         c.requireVerified   = bool(behaviour, "require-verified", c.requireVerified);
         Map<?, ?> broadcast = section(behaviour, "broadcast");
@@ -102,6 +118,7 @@ public final class ConfigMapper {
         m.noPermission      = str(ms, "no-permission", m.noPermission);
         m.playerOnly        = str(ms, "player-only", m.playerOnly);
         m.playerNotFound    = str(ms, "player-not-found", m.playerNotFound);
+        m.commandDisabled   = str(ms, "command-disabled", m.commandDisabled);
         m.voteHeader        = str(ms, "vote-header", m.voteHeader);
         m.voteLine          = str(ms, "vote-line", m.voteLine);
         m.voteFooter        = str(ms, "vote-footer", m.voteFooter);
@@ -115,6 +132,7 @@ public final class ConfigMapper {
         m.votePartyDisabled = str(ms, "voteparty-disabled", m.votePartyDisabled);
         m.reloaded          = str(ms, "reloaded", m.reloaded);
         m.testVote          = str(ms, "test-vote", m.testVote);
+        m.testVoteRefused   = str(ms, "test-vote-refused", m.testVoteRefused);
         m.votesSet          = str(ms, "votes-set", m.votesSet);
         m.votesReset        = str(ms, "votes-reset", m.votesReset);
         m.partyForced       = str(ms, "party-forced", m.partyForced);

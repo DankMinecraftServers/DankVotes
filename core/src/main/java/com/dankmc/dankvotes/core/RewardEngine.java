@@ -1,6 +1,5 @@
 package com.dankmc.dankvotes.core;
 
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -13,10 +12,14 @@ import java.util.concurrent.ThreadLocalRandom;
  *   - a platform-native event other plugins can listen to / cancel
  *   - base reward commands (per-command chance + optional permission gate)
  *   - milestone rewards (every N votes, or at exactly N votes)
- *   - day-streak tracking and streak rewards
+ *   - day-streak tracking and streak rewards (once a day, with the vote that moves the streak)
  *   - broadcast + thank-you messages
  *   - offline queueing (replay when the player next joins)
  *   - server-wide vote parties with persistent progress
+ *
+ * Statistics, rewards and vote messages can each be switched off (features.* in config.yml)
+ * for servers that leave them to another plugin; the duplicate check, the event and
+ * forwarding always run.
  *
  * All command dispatch goes through Platform, which handles thread-correctness
  * (critical for Folia's region scheduler). processVote() is synchronized: votes are rare
@@ -100,6 +103,15 @@ public class RewardEngine {
             return false;
         }
 
+        // behaviour.offline-votes: false - only players who are online when their vote arrives
+        // count. Anything else stops here: not counted, saved, rewarded, announced or forwarded.
+        // A vote a DankVotes proxy forwarded has already passed the proxy's (network-wide) check.
+        if (!config.offlineVotes && !vote.isForwarded() && !platform.isPlayerOnline(vote.getUsername())) {
+            platform.getLogger().info("Ignoring vote from " + vote.getUsername() + " via " + vote.getServiceName()
+                + ": the player is offline and behaviour.offline-votes is false.");
+            return false;
+        }
+
         // Give other plugins a chance to react or cancel (Bukkit event on Paper).
         if (!platform.fireVoteEvent(vote)) {
             debug("Vote event for " + vote.getUsername() + " was cancelled by another plugin.");
@@ -109,10 +121,20 @@ public class RewardEngine {
         platform.getLogger().info("Vote received: " + vote.getUsername() + " via " + vote.getServiceName()
             + (vote.isVerified() ? " [verified]" : " [unverified]"));
 
-        // Count it now regardless of online status (totals, streaks, party, leaderboard).
-        int newCount = storage.recordVote(vote.getUsername(), vote.getTimestamp(), config.streaksEnabled);
-        Vote counted = vote.withVoteNumber(newCount);
-        int streak = storage.getStreak(vote.getUsername());
+        // Count it now regardless of online status (totals, streaks, leaderboard). With statistics
+        // off nothing is counted; reminders still need to know who voted today, so only that is kept.
+        int newCount = 0;
+        int streak = 0;
+        int streakDay = 0;
+        if (config.statisticsEnabled) {
+            VoteStorage.Recorded recorded = storage.countVote(vote.getUsername(), vote.getTimestamp(), config.streaksEnabled);
+            newCount = recorded.votes;
+            streakDay = recorded.streakDay;
+            if (config.streaksEnabled) streak = storage.getStreak(vote.getUsername());
+        } else if (config.reminderEnabled) {
+            storage.markVoted(vote.getUsername(), vote.getTimestamp());
+        }
+        Vote counted = vote.withCount(newCount, streakDay);
 
         // Hand it to the backend servers first, so their rewards never wait on ours.
         VoteForwarder f = forwarder;
@@ -124,19 +146,21 @@ public class RewardEngine {
             }
         }
 
-        if (config.broadcastEnabled) {
-            platform.broadcast(applyPlaceholders(config.broadcastMessage, counted, newCount, streak));
-        }
-        if (config.streaksEnabled && config.streakBroadcastEnabled && streak > 1) {
-            platform.broadcast(applyPlaceholders(config.streakBroadcastMessage, counted, newCount, streak));
+        if (config.voteMessagesEnabled) {
+            if (config.broadcastEnabled) {
+                broadcast(config.broadcastMessage, counted, newCount, streak);
+            }
+            // Once a day, with the vote that moved the streak, not again for every site voted on.
+            if (config.streaksActive() && config.streakBroadcastEnabled && streakDay > 1) {
+                broadcast(config.streakBroadcastMessage, counted, newCount, streakDay);
+            }
         }
 
-        boolean online = platform.isPlayerOnline(vote.getUsername());
-        if (!online && config.queueOfflineVotes) {
+        if (config.rewardsEnabled && config.queueOfflineVotes && !platform.isPlayerOnline(vote.getUsername())) {
             storage.queueOfflineVote(counted);
             platform.getLogger().info("Player " + vote.getUsername() + " is offline - reward queued for next join.");
         } else {
-            deliverRewards(counted, newCount, streak);
+            deliverRewards(counted, newCount, streak, config.statisticsEnabled);
         }
 
         trackVoteParty();
@@ -148,16 +172,22 @@ public class RewardEngine {
      * Called by platform join listeners (async).
      */
     public synchronized void replayQueuedVotes(String username) {
+        // Rewards switched off since these were saved: keep them for when rewards are back on.
+        if (!config.rewardsEnabled) return;
         List<Vote> queued = storage.drainOfflineVotes(username);
         if (queued.isEmpty()) return;
 
         platform.getLogger().info("Delivering " + queued.size() + " queued vote reward(s) to " + username);
-        int streak = storage.getStreak(username);
+        int streak = streakOf(username);
         for (Vote v : queued) {
             // Use the count snapshot taken when the vote was queued so EVERY/AT milestones
-            // trigger correctly even when several votes are replayed at once.
-            int count = v.getVoteNumber() > 0 ? v.getVoteNumber() : storage.getVoteCount(username);
-            deliverRewards(v, count, streak);
+            // trigger correctly even when several votes are replayed at once. A vote saved
+            // with no count (statistics were off) was never counted: it gets its rewards but
+            // no milestones, which would otherwise be paid again on the player's current total.
+            // Streak rewards follow the streak day saved with each vote (see deliverRewards).
+            boolean counted = v.getVoteNumber() > 0;
+            int count = !config.statisticsEnabled ? 0 : counted ? v.getVoteNumber() : votesOf(username);
+            deliverRewards(v, count, streak, counted);
         }
     }
 
@@ -168,11 +198,20 @@ public class RewardEngine {
 
     // ── Internal ─────────────────────────────────────────────────────
 
-    private void deliverRewards(Vote vote, int count, int streak) {
-        deliverBaseRewards(vote, count, streak);
-        deliverMilestones(config.milestones, count, vote, count, streak, "Milestone");
-        if (config.streaksEnabled) {
-            deliverMilestones(config.streakRewards, streak, vote, count, streak, "Streak");
+    /** @param counted whether this vote was counted, i.e. {@code count} is the player's total including it */
+    private void deliverRewards(Vote vote, int count, int streak, boolean counted) {
+        if (config.rewardsEnabled) {
+            deliverBaseRewards(vote, count, streak);
+            // Milestones and streak rewards are keyed on the player's counted votes.
+            if (config.statisticsEnabled && counted) {
+                deliverMilestones(config.milestones, count, vote, count, streak, "Milestone");
+                // Streak rewards go with the vote that moved the streak: once a day, however many
+                // sites the player votes on, and for the day that vote reached.
+                int day = vote.getStreakDay();
+                if (config.streaksEnabled && day > 0) {
+                    deliverMilestones(config.streakRewards, day, vote, count, day, "Streak");
+                }
+            }
         }
         sendThankYou(vote, count, streak);
     }
@@ -214,10 +253,17 @@ public class RewardEngine {
     }
 
     private void sendThankYou(Vote vote, int count, int streak) {
-        if (config.thankYouEnabled && platform.isPlayerOnline(vote.getUsername())) {
+        if (config.voteMessagesEnabled && config.thankYouEnabled && !Strings.isBlank(config.thankYouMessage)
+                && platform.isPlayerOnline(vote.getUsername())) {
             platform.messagePlayer(vote.getUsername(),
                 applyPlaceholders(config.thankYouMessage, vote, count, streak));
         }
+    }
+
+    /** Broadcast a message template; a message set to "" in config.yml is not sent at all. */
+    private void broadcast(String template, Vote vote, int count, int streak) {
+        if (Strings.isBlank(template)) return;
+        platform.broadcast(applyPlaceholders(template, vote, count, streak));
     }
 
     private void trackVoteParty() {
@@ -226,14 +272,14 @@ public class RewardEngine {
         if (progress >= config.votePartyGoal) {
             runVoteParty();
         } else if (config.votePartyAnnounceEvery > 0 && progress % config.votePartyAnnounceEvery == 0) {
-            platform.broadcast(applyPlaceholders(config.votePartyProgressMessage, null, 0, 0));
+            broadcast(config.votePartyProgressMessage, null, 0, 0);
         }
     }
 
     private void runVoteParty() {
         storage.resetPartyProgress();
         platform.getLogger().info("Vote party triggered!");
-        platform.broadcast(applyPlaceholders(config.votePartyStartMessage, null, 0, 0));
+        broadcast(config.votePartyStartMessage, null, 0, 0);
 
         List<String> online = platform.getOnlinePlayerNames();
         for (DankVotesConfig.RewardCommand rc : config.votePartyRewards) {
@@ -245,7 +291,7 @@ public class RewardEngine {
                     if (rollChance(rc.chance)) {
                         platform.dispatchConsoleCommand(applyPlaceholders(rc.command,
                             new Vote(name, "party", "", System.currentTimeMillis(), true, 0),
-                            storage.getVoteCount(name), storage.getStreak(name)));
+                            votesOf(name), streakOf(name)));
                     }
                 }
             } else if (rollChance(rc.chance)) {
@@ -321,24 +367,43 @@ public class RewardEngine {
     /**
      * Expand placeholders in messages and commands.
      * %player% %service% %votes% %streak% %best_streak% %party_progress% %party_goal% %party_remaining% %total_votes%
+     * While statistics (or the vote party) are off, their placeholders are 0, never a stale count.
      */
     public String applyPlaceholders(String input, Vote vote, int count, int streak) {
         if (input == null) return "";
+        boolean stats = config.statisticsEnabled;
         String out = input;
         if (vote != null) {
             out = out.replace("%player%", vote.getUsername())
                      .replace("%service%", vote.getServiceName())
-                     .replace("%best_streak%", String.valueOf(storage.getBestStreak(vote.getUsername())));
+                     .replace("%best_streak%", String.valueOf(stats ? storage.getBestStreak(vote.getUsername()) : 0));
         }
-        int goal = config.votePartyGoal;
-        int progress = storage.getPartyProgress();
+        boolean party = config.votePartyEnabled;
+        int goal = party ? config.votePartyGoal : 0;
+        int progress = party ? storage.getPartyProgress() : 0;
         out = out.replace("%votes%", String.valueOf(count))
                  .replace("%streak%", String.valueOf(streak))
                  .replace("%party_progress%", String.valueOf(progress))
                  .replace("%party_goal%", String.valueOf(goal))
                  .replace("%party_remaining%", String.valueOf(Math.max(0, goal - progress)))
-                 .replace("%total_votes%", String.valueOf(storage.getTotalVotes()));
+                 .replace("%total_votes%", String.valueOf(stats ? storage.getTotalVotes() : 0));
         return out;
+    }
+
+    /** Placeholders for a player outside of a vote (commands, reminders), with their own count and streak. */
+    public String applyPlayerPlaceholders(String input, String player) {
+        Vote ctx = new Vote(player, "", "", System.currentTimeMillis(), true, 0);
+        return applyPlaceholders(input, ctx, votesOf(player), streakOf(player));
+    }
+
+    /** The player's counted votes, or 0 while statistics are off. */
+    int votesOf(String player) {
+        return config.statisticsEnabled ? storage.getVoteCount(player) : 0;
+    }
+
+    /** The player's current streak, or 0 while streaks (or statistics) are off. */
+    int streakOf(String player) {
+        return config.streaksActive() ? storage.getStreak(player) : 0;
     }
 
     private void debug(String msg) {

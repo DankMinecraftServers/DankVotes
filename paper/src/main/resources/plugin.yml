@@ -17,26 +17,15 @@ folia-supported: true
 # Load after these if present so our hooks can find them.
 softdepend: [Votifier, PlaceholderAPI]
 
+# Only /dankvotes is listed here. /vote, /votes (/myvotes), /votetop (/topvotes, /topvoters)
+# and /voteparty (/vp) are registered while DankVotes starts, and only when config.yml has
+# them on: Bukkit claims every command in this list before a plugin starts, which would take
+# those names from another plugin even with that part of DankVotes switched off.
 commands:
   dankvotes:
     description: DankVotes admin commands
     usage: /dankvotes <help|reload|status|test|setvotes|addvotes|reset|party|key|version>
     aliases: [dv, dankvote]
-  vote:
-    description: Show the server's vote links
-    usage: /vote
-  votes:
-    description: Show your (or another player's) vote count and streak
-    usage: /votes [player]
-    aliases: [myvotes]
-  votetop:
-    description: Show the top voters leaderboard
-    usage: /votetop [page]
-    aliases: [topvotes, topvoters]
-  voteparty:
-    description: Show progress towards the next vote party
-    usage: /voteparty
-    aliases: [vp]
 
 permissions:
   dankvotes.admin:

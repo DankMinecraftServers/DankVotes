@@ -22,19 +22,31 @@ public class Vote {
      */
     private final int voteNumber;
 
+    /**
+     * The day streak this vote moved the player to, or 0 when it didn't move it (a second vote
+     * the same day, or streaks off). Streak rewards go with this vote only, so they run once a
+     * day however many sites the player votes on, also when the vote is replayed on join.
+     */
+    private final int streakDay;
+
     /** True when another DankVotes (usually a proxy) forwarded this vote here; never forwarded again. */
     private final boolean forwarded;
 
     public Vote(String username, String serviceName, String address, long timestamp, boolean verified, long apiId) {
-        this(username, serviceName, address, timestamp, verified, apiId, 0, false);
+        this(username, serviceName, address, timestamp, verified, apiId, 0, 0, false);
     }
 
     public Vote(String username, String serviceName, String address, long timestamp, boolean verified, long apiId, int voteNumber) {
-        this(username, serviceName, address, timestamp, verified, apiId, voteNumber, false);
+        this(username, serviceName, address, timestamp, verified, apiId, voteNumber, 0, false);
     }
 
     public Vote(String username, String serviceName, String address, long timestamp, boolean verified, long apiId,
                 int voteNumber, boolean forwarded) {
+        this(username, serviceName, address, timestamp, verified, apiId, voteNumber, 0, forwarded);
+    }
+
+    public Vote(String username, String serviceName, String address, long timestamp, boolean verified, long apiId,
+                int voteNumber, int streakDay, boolean forwarded) {
         this.username = username == null ? "" : username.trim();
         this.serviceName = serviceName == null ? "" : serviceName;
         this.address = address == null ? "" : address;
@@ -42,12 +54,18 @@ public class Vote {
         this.verified = verified;
         this.apiId = apiId;
         this.voteNumber = voteNumber;
+        this.streakDay = Math.max(0, streakDay);
         this.forwarded = forwarded;
     }
 
     /** Copy of this vote with the vote-number snapshot set. */
     public Vote withVoteNumber(int number) {
-        return new Vote(username, serviceName, address, timestamp, verified, apiId, number, forwarded);
+        return new Vote(username, serviceName, address, timestamp, verified, apiId, number, streakDay, forwarded);
+    }
+
+    /** Copy of this vote with what counting it recorded: the player's total and the streak day it reached (0 if none). */
+    public Vote withCount(int number, int streakDay) {
+        return new Vote(username, serviceName, address, timestamp, verified, apiId, number, streakDay, forwarded);
     }
 
     public String getUsername()    { return username; }
@@ -57,11 +75,13 @@ public class Vote {
     public boolean isVerified()    { return verified; }
     public long getApiId()         { return apiId; }
     public int getVoteNumber()     { return voteNumber; }
+    public int getStreakDay()      { return streakDay; }
     public boolean isForwarded()   { return forwarded; }
 
     @Override
     public String toString() {
         return "Vote{user=" + username + ", service=" + serviceName + ", verified=" + verified
-            + ", apiId=" + apiId + ", n=" + voteNumber + (forwarded ? ", forwarded" : "") + "}";
+            + ", apiId=" + apiId + ", n=" + voteNumber + (streakDay > 0 ? ", streakDay=" + streakDay : "")
+            + (forwarded ? ", forwarded" : "") + "}";
     }
 }

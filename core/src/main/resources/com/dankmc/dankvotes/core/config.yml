@@ -11,6 +11,8 @@
 #  Placeholders available in messages AND reward commands:
 #    %player%  %service%  %votes%  %streak%  %best_streak%  %total_votes%
 #    %party_progress%  %party_goal%  %party_remaining%
+#  (%votes%, %streak%, %best_streak% and %total_votes% need features.statistics.)
+#  Set a vote, vote-party or reminder message to "" to stop sending it.
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── HOW VOTES REACH YOUR SERVER ──────────────────────────────────────────────
@@ -73,9 +75,52 @@ forwarding:
       port: 8193
       token: "the votifier.token from the survival server's config"
 
+# ── FEATURES ─────────────────────────────────────────────────────────────────
+# Using another plugin for some of this? Switch that part off here. A part that is
+# off does nothing at all and its commands aren't registered. Votes are still
+# received, duplicate-checked and forwarded, and on Bukkit servers other plugins
+# still get them through DankVoteEvent.
+features:
+  # Vote totals, streaks and the top-voters list: /votes, /votetop, their
+  # placeholders (%dankvotes_votes% and the like) and /dankvotes setvotes|addvotes|reset.
+  # Milestones and streak rewards count votes, so they need this on too.
+  statistics: true
+  # Reward commands: rewards, milestones and streak rewards (and saving them for
+  # players who vote while offline).
+  rewards: true
+  # The broadcast, thank-you and streak messages sent when someone votes.
+  vote-messages: true
+  # Reminders and vote parties have their own switches further down:
+  # reminders.enabled and vote-party.enabled.
+
+# ── COMMANDS ─────────────────────────────────────────────────────────────────
+# A command set to false is never registered, so another plugin can have the name.
+# Commands of a part that is off aren't registered either: /voteparty stays free
+# while vote-party.enabled is false, /votes and /votetop while statistics are off.
+# /vote, /votes, /votetop and /voteparty change after a server restart; the
+# /dankvotes ones after /dankvotes reload. /dankvotes itself is always there.
+commands:
+  vote: true         # /vote
+  votes: true        # /votes [player]  (alias /myvotes)
+  votetop: true      # /votetop [page]  (aliases /topvotes, /topvoters)
+  voteparty: true    # /voteparty       (alias /vp)
+  setvotes: true     # /dankvotes setvotes|addvotes <player> <n>
+  reset: true        # /dankvotes reset <player>
+  party: true        # /dankvotes party
+
 # ── BEHAVIOUR ────────────────────────────────────────────────────────────────
 behaviour:
-  # If a player votes while offline, save the reward and give it when they next join.
+  # Votes from players who aren't online (on this server; on a proxy, the whole network).
+  #   true  = they count like any other vote
+  #   false = only players who are online when their vote arrives count. Other votes are
+  #           ignored: not counted, saved, rewarded, announced or forwarded, and they don't
+  #           add to the vote party. Those players still get reminders, as their vote didn't
+  #           count. On a network, set this on the proxy; servers behind it count what the
+  #           proxy forwards.
+  offline-votes: true
+
+  # With offline votes counted: save the rewards of a player who votes while offline and
+  # give them when they next join. false = run the reward commands straight away.
   queue-offline-votes: true
 
   # Only reward votes from real (non-VPN/proxy) IPs. DankMinecraftServers flags each
@@ -126,7 +171,9 @@ milestones:
 
 # ── STREAKS (consecutive days voted) ─────────────────────────────────────────
 # A streak increases when a player votes on consecutive days and resets if they
-# miss a day. Streak rewards use the same EVERY / AT format, keyed on DAYS.
+# miss a day. Streak rewards use the same EVERY / AT format, keyed on DAYS. They
+# run once a day, with the player's first vote that day, however many sites they
+# vote on (the streak broadcast too).
 streaks:
   enabled: true
   broadcast:
@@ -146,7 +193,8 @@ streaks:
 # ── VOTE PARTY (server-wide goal) ────────────────────────────────────────────
 # When the whole server reaches the goal, everyone online gets rewards.
 # Commands containing %player% run once per online player; others run once.
-# Progress is saved across restarts.
+# Progress is saved across restarts. While this is off, /voteparty isn't
+# registered (another plugin can have it) and /dankvotes party is unavailable.
 vote-party:
   enabled: false
   goal: 50
@@ -161,7 +209,8 @@ vote-party:
 
 # ── REMINDERS ────────────────────────────────────────────────────────────────
 # Nudge online players who haven't voted today. Players with the permission
-# dankvotes.reminder.bypass are never reminded.
+# dankvotes.reminder.bypass are never reminded. enabled: false switches them off
+# completely (for example when another plugin sends the reminders).
 reminders:
   enabled: true
   interval-minutes: 30
@@ -184,6 +233,7 @@ messages:
   no-permission: "&cYou don't have permission to do that."
   player-only: "&cThat command can only be used by a player."
   player-not-found: "&cNo vote data found for &f%player%&c."
+  command-disabled: "&cThat command is turned off on this server."
   vote-header: "&8&m----------&r &d&lVOTE &8&m----------"
   vote-line: "&d» &f%name%&7: &b%url%"
   vote-footer: "&7Vote daily to earn rewards! Your total: &d%votes% &7| Streak: &d%streak% &7days"
@@ -197,6 +247,7 @@ messages:
   voteparty-disabled: "&7Vote parties are not enabled on this server."
   reloaded: "&aDankVotes configuration reloaded."
   test-vote: "&aSimulated a vote for &d%player%&a."
+  test-vote-refused: "&cThe test vote for &f%player% &cwas not counted - the console says why."
   votes-set: "&aSet &d%player%&a's vote count to &d%votes%&a."
   votes-reset: "&aReset vote data for &d%player%&a."
   party-forced: "&aForced a vote party."

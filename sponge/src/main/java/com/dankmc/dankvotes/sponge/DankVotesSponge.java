@@ -71,15 +71,25 @@ public final class DankVotesSponge {
 
     // ── lifecycle ────────────────────────────────────────────────────
 
+    /**
+     * Sponge asks for commands before the server (and DankVotes) has started, so config.yml is
+     * read here for which ones are switched on. The rest are never registered.
+     */
     @Listener
     public void onRegisterCommands(final RegisterCommandEvent<Command.Raw> event) {
-        for (String[] names : CommandHandler.COMMANDS) {
+        File file = DefaultConfig.saveIfMissing(configDir.toFile(), DankVotesSponge.class, logger);
+        DankVotesConfig config = loadConfig(file);
+        List<String> registered = new ArrayList<String>();
+        for (String[] names : CommandHandler.enabledCommands(config)) {
             try {
                 event.register(this.container, new RawCommand(names[0]), names[0], Arrays.copyOfRange(names, 1, names.length));
+                registered.add(names[0]);
             } catch (RuntimeException e) {
                 logger.warning("Could not register /" + names[0] + ": " + e.getMessage());
             }
         }
+        commands.setRegistered(registered);
+        logger.info(CommandHandler.registrationSummary(config));
     }
 
     @Listener
@@ -190,7 +200,7 @@ public final class DankVotesSponge {
 
         @Override
         public Optional<Component> shortDescription(final CommandCause cause) {
-            return Optional.of(SpongePlatform.component(describe(canonical)));
+            return Optional.of(SpongePlatform.component(CommandHandler.description(canonical)));
         }
 
         @Override
@@ -200,7 +210,8 @@ public final class DankVotesSponge {
 
         @Override
         public Component usage(final CommandCause cause) {
-            return SpongePlatform.component(usageOf(canonical));
+            DankVotesCore c = core;
+            return SpongePlatform.component(CommandHandler.arguments(canonical, c == null ? null : c.getConfig()));
         }
     }
 
@@ -237,20 +248,5 @@ public final class DankVotesSponge {
     private static String[] words(String input) {
         String t = input == null ? "" : input.trim();
         return t.isEmpty() ? new String[0] : t.split("\\s+");
-    }
-
-    private static String describe(String command) {
-        if (command.equals("vote")) return "Show the server's vote links";
-        if (command.equals("votes")) return "Show your (or another player's) vote count and streak";
-        if (command.equals("votetop")) return "Show the top voters leaderboard";
-        if (command.equals("voteparty")) return "Show progress towards the next vote party";
-        return "DankVotes admin commands";
-    }
-
-    private static String usageOf(String command) {
-        if (command.equals("votes")) return "[player]";
-        if (command.equals("votetop")) return "[page]";
-        if (command.equals("dankvotes")) return "<help|reload|status|test|setvotes|addvotes|reset|party|key|version>";
-        return "";
     }
 }

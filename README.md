@@ -31,11 +31,12 @@ ports** by polling [DankMinecraftServers.com](https://dankminecraftservers.com) 
 | **Network forwarding** | A Velocity or BungeeCord proxy passes every vote on to the servers behind it (Paper, Folia, Purpur, Sponge...), with a retry queue that survives restarts |
 | **Rewards** | Console commands per vote, with per-command **chance** and **permission** gates |
 | **Milestones** | Rewards every *N* votes or at exactly *N* (`EVERY` / `AT`) |
-| **Streaks** | Consecutive-day streak tracking with streak rewards and best-streak records |
+| **Streaks** | Consecutive-day streak tracking with streak rewards and best-streak records; streak rewards run once a day, however many sites a player votes on |
 | **Vote parties** | Server-wide goals with progress announcements; per-player and global rewards; progress survives restarts |
-| **Offline votes** | Queued and delivered on next join — milestones still trigger correctly |
+| **Offline votes** | Queued and delivered on next join — milestones still trigger correctly. Or switch them off (`behaviour.offline-votes: false`) so only players who are online when their vote arrives count |
 | **Reminders** | Nudge players who haven't voted today (interval + on join, permission bypass) |
 | **Player commands** | `/vote`, `/votes`, `/votetop`, `/voteparty` |
+| **Use only what you need** | Switch off statistics, rewards, vote messages, reminders, vote parties or any single command. A part that is off registers no commands, so DankVotes runs next to another vote plugin without clashing |
 | **Integrations** | PlaceholderAPI expansion, `DankVoteEvent` for other plugins, NuVotifier bridge, bStats |
 | **Safety** | Duplicate-vote protection across channels, verified-IP filtering, atomic data saves, update notifications |
 | **Runs everywhere** | Bukkit forks from 1.7.10 to the latest release, Folia (region schedulers, no "wrong thread" errors), Sponge, Velocity and BungeeCord — one jar, one config |
@@ -182,9 +183,75 @@ reminders:
 
 **Placeholders** usable in every message and reward command:
 `%player%` `%service%` `%votes%` `%streak%` `%best_streak%` `%total_votes%`
-`%party_progress%` `%party_goal%` `%party_remaining%`
+`%party_progress%` `%party_goal%` `%party_remaining%` (the vote-count ones show 0 while
+statistics are off, the party ones while the vote party is off)
 
-All player-facing text lives under `messages:` and supports `&` colour codes.
+All player-facing text lives under `messages:` and supports `&` colour codes. Set a vote,
+vote-party or reminder message to `""` to stop sending it.
+
+**Offline votes.** By default a vote counts whether or not the player is online, and the
+rewards of an offline player are saved for their next join (`behaviour.queue-offline-votes`).
+Set `behaviour.offline-votes: false` and only players who are online when their vote arrives
+count: any other vote is ignored, so it isn't counted, saved, rewarded, announced or forwarded
+and doesn't add to the vote party. On a network, set it on the proxy (where "online" means
+anywhere on the network); servers behind it count the votes the proxy forwards.
+
+### Running alongside another vote plugin
+
+Already using another plugin for rewards, leaderboards, reminders or vote parties? Switch that
+part of DankVotes off: a part that is off does nothing at all, and its commands are never
+registered. Any single command can be switched off too. Either way the other plugin keeps
+`/vote`, `/votes`, `/votetop` or `/voteparty`:
+
+```yaml
+features:
+  statistics: true      # vote totals, streaks, /votes, /votetop, placeholders
+  rewards: true         # reward commands, milestones, streak rewards
+  vote-messages: true   # vote broadcast, thank-you and streak messages
+reminders:
+  enabled: true
+vote-party:
+  enabled: false        # /voteparty is only registered while this is true
+
+commands:               # false = not registered, the name stays free
+  vote: true
+  votes: true
+  votetop: true
+  voteparty: true
+  setvotes: true        # /dankvotes setvotes|addvotes
+  reset: true           # /dankvotes reset
+  party: true           # /dankvotes party
+```
+
+- Milestones and streak rewards count each player's votes, so they need `statistics` on.
+  With statistics off DankVotes keeps no totals; if reminders are on it still notes who voted
+  today, so it doesn't remind them.
+- `/votes`, `/votetop` and `/dankvotes setvotes|addvotes|reset` go with statistics,
+  `/voteparty` and `/dankvotes party` with the vote party.
+- Player-command changes take effect after a restart (`/dankvotes reload` tells you when one
+  is needed); the `/dankvotes` subcommands follow `/dankvotes reload` straight away.
+- On Bukkit servers DankVotes logs which plugin also has a command name and which setting to
+  change, for example: `/vote belongs to VotingPlugin, so DankVotes's /vote only works as
+  /dankvotes:vote. Set commands.vote: false in config.yml to stop registering it.`
+- On a network, the proxy's commands are matched before the backend servers' own. If your
+  backends have their own `/vote`, set `commands.vote: false` in the proxy's DankVotes.
+
+**Receive votes only, and pass them to another plugin.** Turn off `statistics`, `rewards`,
+`vote-messages`, `reminders.enabled` and the commands you don't want, and DankVotes only
+receives votes (polling needs no open port). Other plugins get each vote through
+`DankVoteEvent` (see [Developer API](#developer-api)). Plugins that listen to NuVotifier
+instead get them through forwarding to this server's own NuVotifier:
+
+```yaml
+nuvotifier-hook: false    # required here, or every vote comes back into DankVotes
+forwarding:
+  enabled: true
+  servers:
+    - name: "nuvotifier"
+      host: "127.0.0.1"
+      port: 8192                                   # NuVotifier's port
+      token: "the default token from plugins/Votifier/config.yml"
+```
 
 ## Commands & permissions
 
@@ -204,9 +271,15 @@ All player-facing text lives under `messages:` and supports `&` colour codes.
 
 `dankvotes.reminder.bypass` — never receive reminders. `dankvotes.*` — everything.
 
+Any player command can be switched off under `commands:` in `config.yml`, and it is then not
+registered at all. `/voteparty` is only registered while the vote party is on, `/votes` and
+`/votetop` only while statistics are on. See
+[Running alongside another vote plugin](#running-alongside-another-vote-plugin).
+
 ## PlaceholderAPI
 
-Installed automatically when PlaceholderAPI is present:
+Installed automatically when PlaceholderAPI is present. Placeholders of a part that is switched
+off stay unparsed: the `party_` ones need the vote party, the rest need statistics.
 
 `%dankvotes_votes%` `%dankvotes_streak%` `%dankvotes_best_streak%` `%dankvotes_rank%`
 `%dankvotes_voted_today%` `%dankvotes_total_votes%` `%dankvotes_party_progress%`

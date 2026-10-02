@@ -1,11 +1,11 @@
 package com.dankmc.dankvotes.velocity;
 
-import com.dankmc.dankvotes.core.CommandText;
+import com.dankmc.dankvotes.core.CommandHandler;
 import com.dankmc.dankvotes.core.DankVotesConfig;
 import com.dankmc.dankvotes.core.DankVotesCore;
 import com.dankmc.dankvotes.core.DefaultConfig;
-import com.dankmc.dankvotes.core.Vote;
 import com.google.inject.Inject;
+import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
@@ -19,12 +19,13 @@ import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.slf4j.Logger;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -36,27 +37,29 @@ import java.util.logging.LogRecord;
  * streaks, /vote, /votetop, and proxy-level reward commands. For in-world rewards
  * (items, crates) run the same jar on the backend servers too and turn on forwarding,
  * which passes every vote the proxy receives on to them (Paper, Folia, Purpur, Sponge...).
+ *
+ * Commands run through the shared {@link CommandHandler}. Only the ones config.yml switches on
+ * are registered: proxy commands are matched before the backend's, so a /vote left on here
+ * would hide the backend servers' own /vote.
  */
 @Plugin(
     id = "dankvotes",
     name = "DankVotes",
-    version = "1.1.1",
+    version = "1.2.0",
     description = "Vote rewards done right - polling, Votifier v1/v2, streaks, vote parties, reminders.",
     url = "https://dankminecraftservers.com",
     authors = {"DankMinecraftServers"}
 )
 public class DankVotesVelocity {
 
-    private static final String PERM_ADMIN = "dankvotes.admin";
-
     private final ProxyServer proxy;
     private final Logger slf4jLogger;
     private final Path dataDirectory;
     private final java.util.logging.Logger julLogger;
+    private final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacyAmpersand();
+    private volatile CommandHandler commands;
 
-    private DankVotesCore core;
-    private VelocityPlatform platform;
-    private CommandText text;
+    private volatile DankVotesCore core;
 
     @Inject
     public DankVotesVelocity(ProxyServer proxy, Logger logger, @DataDirectory Path dataDirectory) {
@@ -72,14 +75,8 @@ public class DankVotesVelocity {
             Files.createDirectories(dataDirectory);
             DefaultConfig.saveIfMissing(dataDirectory.toFile(), DankVotesVelocity.class, julLogger);
             startCore();
-
-            var cm = proxy.getCommandManager();
-            cm.register(meta(cm.metaBuilder("dankvotes").aliases("dv", "dankvote")), new AdminCommand());
-            cm.register(meta(cm.metaBuilder("vote")), new VoteCommand());
-            cm.register(meta(cm.metaBuilder("votes").aliases("myvotes")), new VotesCommand());
-            cm.register(meta(cm.metaBuilder("votetop").aliases("topvotes", "topvoters")), new VoteTopCommand());
-            cm.register(meta(cm.metaBuilder("voteparty").aliases("vp")), new VotePartyCommand());
-
+            commands = new CommandHandler(() -> core, this::reload, "Velocity");
+            registerCommands(core.getConfig());
             slf4jLogger.info("DankVotes enabled on Velocity.");
         } catch (Exception e) {
             slf4jLogger.error("Failed to start DankVotes: {}", e.getMessage(), e);
@@ -88,12 +85,15 @@ public class DankVotesVelocity {
 
     @Subscribe
     public void onShutdown(ProxyShutdownEvent event) {
-        if (core != null) core.stop();
+        DankVotesCore c = core;
+        core = null;
+        if (c != null) c.stop();
     }
 
     @Subscribe
     public void onLogin(PostLoginEvent event) {
-        if (core != null) core.onPlayerJoin(event.getPlayer().getUsername());
+        DankVotesCore c = core;
+        if (c != null) c.onPlayerJoin(event.getPlayer().getUsername());
     }
 
     /** Forwarding in "current" mode: deliver held votes once the player reaches a backend. */
@@ -102,6 +102,37 @@ public class DankVotesVelocity {
         DankVotesCore c = core;
         if (c != null) {
             c.getForwarder().onPlayerServer(event.getPlayer().getUsername(), event.getServer().getServerInfo().getName());
+        }
+    }
+
+    /** Register the commands config.yml switches on; the rest stay free for other plugins and the backends. */
+    private void registerCommands(DankVotesConfig config) {
+        CommandManager cm = proxy.getCommandManager();
+        List<String> registered = new ArrayList<>();
+        for (String[] names : CommandHandler.enabledCommands(config)) {
+            if (!names[0].equals("dankvotes")) warnIfTaken(cm, names);
+            String[] aliases = Arrays.copyOfRange(names, 1, names.length);
+            cm.register(meta(cm.metaBuilder(names[0]).aliases(aliases)), new VelocityCommand(names[0]));
+            registered.add(names[0]);
+        }
+        commands.setRegistered(registered);
+        slf4jLogger.info(CommandHandler.registrationSummary(config));
+    }
+
+    /** Velocity lets the newest registration of a name win, so say when DankVotes takes one over. */
+    private void warnIfTaken(CommandManager cm, String[] names) {
+        List<String> taken = new ArrayList<>();
+        for (String name : names) {
+            try {
+                if (cm.hasCommand(name)) taken.add("/" + name);
+            } catch (Throwable t) {
+                return;
+            }
+        }
+        if (!taken.isEmpty()) {
+            slf4jLogger.warn("{} already belongs to another plugin on this proxy; DankVotes's /{} replaces it. "
+                + "To keep the other one, set commands.{}: false in config.yml and restart.",
+                String.join(", ", taken), names[0], names[0]);
         }
     }
 
@@ -120,16 +151,18 @@ public class DankVotesVelocity {
 
     /** Commands run on several threads; two reloads must not leave two cores running. */
     private synchronized void reload() {
-        if (core != null) core.stop();
+        DankVotesCore old = core;
+        core = null;
+        if (old != null) old.stop();
         startCore();
     }
 
     private void startCore() {
         DankVotesConfig config = VelocityConfigLoader.load(dataDirectory.resolve("config.yml"), julLogger);
-        platform = new VelocityPlatform(proxy, this, julLogger, dataDirectory.toFile());
-        core = new DankVotesCore(platform, config);
-        text = new CommandText(core);
-        core.start();
+        VelocityPlatform platform = new VelocityPlatform(proxy, this, julLogger, dataDirectory.toFile());
+        DankVotesCore c = new DankVotesCore(platform, config);
+        c.start();
+        core = c;
     }
 
     /** Route java.util.logging (used by core) into Velocity's SLF4J logger. */
@@ -150,14 +183,72 @@ public class DankVotesVelocity {
         return jul;
     }
 
-    // ── helpers ──────────────────────────────────────────────────────
+    // ── commands ─────────────────────────────────────────────────────
 
-    private void send(CommandSource source, String legacy) {
-        for (String line : legacy.split("\n")) source.sendMessage(platform.component(line));
+    private List<String> onlineNames() {
+        List<String> out = new ArrayList<>();
+        for (Player p : proxy.getAllPlayers()) out.add(p.getUsername());
+        return out;
     }
 
-    private void send(CommandSource source, List<String> lines) {
-        for (String line : lines) source.sendMessage(platform.component(line));
+    /** One Velocity command per DankVotes command; the shared handler does the work. */
+    private final class VelocityCommand implements SimpleCommand {
+
+        private final String canonical;
+
+        VelocityCommand(String canonical) {
+            this.canonical = canonical;
+        }
+
+        @Override
+        public void execute(Invocation inv) {
+            commands.execute(canonical, new VelocitySender(inv.source()), inv.arguments());
+        }
+
+        @Override
+        public List<String> suggest(Invocation inv) {
+            return commands.complete(canonical, new VelocitySender(inv.source()), inv.arguments(), onlineNames());
+        }
+
+        /**
+         * Player commands are open unless a permissions plugin denies the node; when it does,
+         * Velocity passes the command on to the backend server. /dankvotes checks inside.
+         */
+        @Override
+        public boolean hasPermission(Invocation inv) {
+            String node = CommandHandler.permission(canonical);
+            return node == null || allowedByDefault(inv.source(), node);
+        }
+    }
+
+    /** A Velocity command source as the shared command handler sees it. */
+    private final class VelocitySender implements CommandHandler.Sender {
+
+        private final CommandSource source;
+
+        VelocitySender(CommandSource source) {
+            this.source = source;
+        }
+
+        @Override
+        public String playerName() {
+            return source instanceof Player p ? p.getUsername() : null;
+        }
+
+        @Override
+        public boolean hasPermission(String permission) {
+            return source.hasPermission(permission);
+        }
+
+        @Override
+        public boolean allowedByDefault(String permission) {
+            return DankVotesVelocity.allowedByDefault(source, permission);
+        }
+
+        @Override
+        public void sendLegacy(String line) {
+            source.sendMessage(legacy.deserialize(line == null ? "" : line));
+        }
     }
 
     /**
@@ -168,118 +259,5 @@ public class DankVotesVelocity {
      */
     private static boolean allowedByDefault(CommandSource source, String permission) {
         return source.getPermissionValue(permission) != Tristate.FALSE;
-    }
-
-    private static String nameOf(CommandSource source) {
-        return source instanceof Player p ? p.getUsername() : null;
-    }
-
-    private List<String> onlineNames(String prefix) {
-        List<String> out = new ArrayList<>();
-        String p = prefix == null ? "" : prefix.toLowerCase();
-        for (Player pl : proxy.getAllPlayers()) {
-            if (pl.getUsername().toLowerCase().startsWith(p)) out.add(pl.getUsername());
-        }
-        Collections.sort(out);
-        return out;
-    }
-
-    private static List<String> filter(List<String> options, String prefix) {
-        String p = prefix == null ? "" : prefix.toLowerCase();
-        return options.stream().filter(o -> o.toLowerCase().startsWith(p)).sorted().toList();
-    }
-
-    // ── commands ─────────────────────────────────────────────────────
-
-    private class VoteCommand implements SimpleCommand {
-        @Override public void execute(Invocation inv) { send(inv.source(), text.vote(nameOf(inv.source()))); }
-        @Override public boolean hasPermission(Invocation inv) { return allowedByDefault(inv.source(), "dankvotes.vote"); }
-    }
-
-    private class VotesCommand implements SimpleCommand {
-        @Override public void execute(Invocation inv) {
-            CommandSource s = inv.source();
-            String viewer = nameOf(s);
-            String target = inv.arguments().length > 0 ? inv.arguments()[0] : null;
-            if (target == null && viewer == null) { send(s, text.usage("/votes <player>")); return; }
-            if (target != null && viewer != null && !target.equalsIgnoreCase(viewer) && !s.hasPermission("dankvotes.votes.others")) {
-                send(s, text.noPermission()); return;
-            }
-            send(s, text.votes(viewer == null ? "CONSOLE" : viewer, target));
-        }
-        @Override public boolean hasPermission(Invocation inv) { return allowedByDefault(inv.source(), "dankvotes.votes"); }
-        @Override public List<String> suggest(Invocation inv) {
-            return inv.arguments().length <= 1 && inv.source().hasPermission("dankvotes.votes.others")
-                ? onlineNames(inv.arguments().length == 1 ? inv.arguments()[0] : "") : List.of();
-        }
-    }
-
-    private class VoteTopCommand implements SimpleCommand {
-        @Override public void execute(Invocation inv) {
-            int page = 1;
-            if (inv.arguments().length > 0) { try { page = Integer.parseInt(inv.arguments()[0]); } catch (NumberFormatException ignored) {} }
-            send(inv.source(), text.voteTop(page, 10));
-        }
-        @Override public boolean hasPermission(Invocation inv) { return allowedByDefault(inv.source(), "dankvotes.votetop"); }
-    }
-
-    private class VotePartyCommand implements SimpleCommand {
-        @Override public void execute(Invocation inv) { send(inv.source(), text.voteParty()); }
-        @Override public boolean hasPermission(Invocation inv) { return allowedByDefault(inv.source(), "dankvotes.voteparty"); }
-    }
-
-    /** /dankvotes <help|reload|status|test|setvotes|addvotes|reset|party|key|version> */
-    private class AdminCommand implements SimpleCommand {
-        private final List<String> subs = List.of("help", "reload", "status", "test", "setvotes", "addvotes", "reset", "party", "key", "version");
-
-        @Override
-        public void execute(Invocation inv) {
-            CommandSource s = inv.source();
-            String[] args = inv.arguments();
-            if (args.length == 0 || args[0].equalsIgnoreCase("help")) { send(s, text.help(s.hasPermission(PERM_ADMIN))); return; }
-            if (!s.hasPermission(PERM_ADMIN)) { send(s, text.noPermission()); return; }
-            DankVotesConfig.Messages m = core.getConfig().messages;
-
-            switch (args[0].toLowerCase()) {
-                case "reload" -> {
-                    reload();
-                    send(s, m.prefix + m.reloaded);
-                }
-                case "status" -> send(s, text.status());
-                case "version" -> send(s, m.prefix + "&7DankVotes &fv" + platform.getPluginVersion() + " &7on &fVelocity");
-                case "key" -> send(s, text.key());
-                case "party" -> { core.getEngine().forceVoteParty(); send(s, m.prefix + m.partyForced); }
-                case "test" -> {
-                    String target = args.length > 1 ? args[1] : (nameOf(s) != null ? nameOf(s) : "TestPlayer");
-                    core.getEngine().processVote(new Vote(target, "test", "127.0.0.1", System.currentTimeMillis(), true, 0));
-                    send(s, m.prefix + m.testVote.replace("%player%", target));
-                }
-                case "setvotes", "addvotes" -> {
-                    if (args.length < 3) { send(s, text.usage("/dankvotes " + args[0] + " <player> <amount>")); return; }
-                    int n;
-                    try { n = Integer.parseInt(args[2]); } catch (NumberFormatException e) { send(s, text.usage("/dankvotes " + args[0] + " <player> <amount>")); return; }
-                    int value = args[0].equalsIgnoreCase("setvotes") ? n : core.getStorage().getVoteCount(args[1]) + n;
-                    core.getStorage().setVoteCount(args[1], value);
-                    core.getStorage().flush();
-                    send(s, m.prefix + m.votesSet.replace("%player%", args[1]).replace("%votes%", String.valueOf(Math.max(0, value))));
-                }
-                case "reset" -> {
-                    if (args.length < 2) { send(s, text.usage("/dankvotes reset <player>")); return; }
-                    core.getStorage().resetPlayer(args[1]);
-                    core.getStorage().flush();
-                    send(s, m.prefix + m.votesReset.replace("%player%", args[1]));
-                }
-                default -> send(s, text.usage("/dankvotes <" + String.join("|", subs) + ">"));
-            }
-        }
-
-        @Override
-        public List<String> suggest(Invocation inv) {
-            if (!inv.source().hasPermission(PERM_ADMIN)) return List.of();
-            String[] a = inv.arguments();
-            if (a.length <= 1) return filter(subs, a.length == 1 ? a[0] : "");
-            if (a.length == 2 && List.of("test", "setvotes", "addvotes", "reset").contains(a[0].toLowerCase())) return onlineNames(a[1]);
-            return List.of();
-        }
     }
 }
