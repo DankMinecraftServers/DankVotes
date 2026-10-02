@@ -9,6 +9,7 @@ and other forks, Sponge, Velocity **and** BungeeCord.
 [![Release](https://img.shields.io/github/v/release/DankMinecraftServers/DankVotes?label=download)](https://github.com/DankMinecraftServers/DankVotes/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.7.10%20→%20latest-brightgreen)](#compatibility)
+[![bStats Servers](https://img.shields.io/bstats/servers/34452?label=servers)](https://bstats.org/plugin/bukkit/DankVotes/34452)
 
 [Download](https://github.com/DankMinecraftServers/DankVotes/releases/latest) · [Quick start](#quick-start) · [Configuration](#configuration) · [Commands](#commands--permissions) · [Placeholders](#placeholderapi) · [Developer API](#developer-api)
 
@@ -248,6 +249,14 @@ the jar attached.
 - Questions & help: [Discord](https://discord.gg/ky3tyJJaJA)
 - Bugs & feature requests: [GitHub Issues](https://github.com/DankMinecraftServers/DankVotes/issues)
 - Server listing & vote traffic: [DankMinecraftServers.com](https://dankminecraftservers.com)
+
+## Metrics
+
+On Bukkit-based servers DankVotes reports anonymous usage statistics to
+[bStats](https://bstats.org/plugin/bukkit/DankVotes/34452): server and player counts, Minecraft,
+Java and server-software versions, country, and which vote sources are enabled. Nothing about
+individual players (no names or IPs) and no vote data. Turn it off with `metrics: false` in
+`config.yml`, or for all plugins in `plugins/bStats/config.yml`.
 
 ## License
 

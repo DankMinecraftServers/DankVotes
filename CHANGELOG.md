@@ -3,6 +3,22 @@
 All notable changes to DankVotes are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1] - 2026-10-02
+
+### Added
+- **bStats metrics are switched on** (plugin id 34452): anonymous counts of servers and
+  players, Minecraft, Java and server-software versions and country, plus which vote sources
+  are in use - nothing about individual players, and no vote data. Public stats:
+  https://bstats.org/plugin/bukkit/DankVotes/34452. Turn them off with `metrics: false` in
+  `config.yml`, or for every plugin in `plugins/bStats/config.yml`. (1.0.0 and 1.1.0 shipped
+  the bStats code with no plugin id, so they never sent anything.)
+
+### Changed
+- bStats 3.1.0 -> 3.2.1 (still Java 8, still Folia-aware).
+- Build and CI updates: maven-compiler-plugin 3.16.0, maven-shade-plugin 3.6.2, SnakeYAML 2.7
+  and PlaceholderAPI 2.12.3 (both compile-only; servers use their own copies),
+  actions/checkout v7, actions/setup-java v6, actions/upload-artifact v7.
+
 ## [1.1.0] - 2026-09-29
 
 Runs on every kind of Minecraft server, from one jar.

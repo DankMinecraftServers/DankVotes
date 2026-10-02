@@ -11,15 +11,15 @@ import java.util.concurrent.Callable;
  * working without metrics. bStats 3.1+ detects Folia itself and never touches the Bukkit
  * scheduler there.
  *
- * SETUP: register the plugin at https://bstats.org/getting-started to receive a numeric
- * plugin id, then set {@link #PLUGIN_ID}. While it is 0, metrics are skipped entirely.
+ * Public stats: https://bstats.org/plugin/bukkit/DankVotes/34452 (the "delivery_mode" and
+ * "platform" pies below must also exist as custom charts on that page to be shown).
  * Server owners can opt out with "metrics: false" in config.yml (or the global bStats
  * config in plugins/bStats/config.yml).
  */
 final class MetricsHook {
 
-    /** bStats plugin id - obtain from bstats.org (0 = metrics disabled). */
-    static final int PLUGIN_ID = 0;
+    /** bStats plugin id (bstats.org, Bukkit platform). 0 would switch metrics off. */
+    static final int PLUGIN_ID = 34452;
 
     private MetricsHook() {}
 
