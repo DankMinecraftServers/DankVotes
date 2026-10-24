@@ -35,7 +35,7 @@ public final class CommandHandler {
     };
 
     public static final List<String> ADMIN_SUBCOMMANDS = Collections.unmodifiableList(Arrays.asList(
-        "help", "reload", "status", "test", "setvotes", "addvotes", "reset", "party", "key", "version"));
+        "help", "reload", "status", "test", "effect", "setvotes", "addvotes", "reset", "party", "key", "version"));
 
     /** Whoever ran the command, as the platform sees them. */
     public interface Sender {
@@ -211,11 +211,13 @@ public final class CommandHandler {
         if (name.equals("dankvotes") && sender.hasPermission(PERM_ADMIN)) {
             List<String> subs = subcommands(cfg);
             if (args.length <= 1) return filter(subs, args.length == 1 ? args[0] : "");
+            String sub = args[0].toLowerCase(Locale.ROOT);
             if (args.length == 2) {
-                String sub = args[0].toLowerCase(Locale.ROOT);
                 boolean takesPlayer = sub.equals("test") || sub.equals("setvotes") || sub.equals("addvotes") || sub.equals("reset");
                 if (takesPlayer && subs.contains(sub)) return filter(onlineNames, args[1]);
+                if (sub.equals("effect") && subs.contains(sub)) return filter(Effects.PREVIEW_NAMES, args[1]);
             }
+            if (args.length == 3 && sub.equals("effect") && subs.contains(sub)) return filter(onlineNames, args[2]);
         }
         return Collections.emptyList();
     }
@@ -287,6 +289,10 @@ public final class CommandHandler {
             s.sendLegacy(m.prefix + m.partyForced);
             return;
         }
+        if (sub.equals("effect")) {
+            effect(core, s, text, args);
+            return;
+        }
         if (sub.equals("test")) {
             String target = args.length > 1 ? args[1] : (s.playerName() != null ? s.playerName() : "TestPlayer");
             boolean counted = core.getEngine().processVote(new Vote(target, "test", "127.0.0.1", System.currentTimeMillis(), true, 0));
@@ -314,6 +320,21 @@ public final class CommandHandler {
             return;
         }
         s.sendLegacy(text.usage("/dankvotes <" + join(subcommands(cfg), "|") + ">"));
+    }
+
+    /** /dankvotes effect &lt;vote|streak|milestone|party|reminder&gt; [player] [votes|days] - preview an effect. */
+    private void effect(DankVotesCore core, Sender s, CommandText text, String[] args) {
+        String usage = "/dankvotes effect <" + join(Effects.PREVIEW_NAMES, "|") + "> [player] [votes|days]";
+        Effects.Trigger trigger = args.length > 1 ? Effects.Trigger.parse(args[1]) : null;
+        if (trigger == null) { s.sendLegacy(text.usage(usage)); return; }
+        String target = args.length > 2 ? args[2] : s.playerName();
+        if (target == null) { s.sendLegacy(text.usage(usage)); return; }
+        int number = 0;
+        if (args.length > 3) {
+            try { number = Integer.parseInt(args[3]); } catch (NumberFormatException e) { number = -1; }
+            if (number < 1) { s.sendLegacy(text.usage(usage)); return; }
+        }
+        s.sendLegacy(text.prefix() + core.getEngine().getEffects().preview(trigger, target, number));
     }
 
     /** Stop the core, re-read config.yml and start a new core, telling the sender how it went. */

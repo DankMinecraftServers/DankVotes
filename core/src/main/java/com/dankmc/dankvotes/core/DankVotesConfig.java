@@ -115,6 +115,48 @@ public class DankVotesConfig {
     public int reminderOnJoinDelaySeconds = 10;
     public String reminderMessage = "&7You haven't voted today! Support the server with &d/vote &7and earn rewards.";
 
+    // ── Effects ──────────────────────────────────────────────────────
+    /**
+     * Particles, sounds, fireworks and titles that celebrate votes (Bukkit-based servers and
+     * Sponge; proxies have no worlds to show them in).
+     */
+    public boolean effectsEnabled = true;
+    /** Whether config.yml has an effects section; a file from before 1.3.0 has none. */
+    public boolean effectsConfigured = false;
+    /**
+     * Kinds of effect, across every effect at once (effects.particles, sounds, fireworks and
+     * titles): false leaves that kind out everywhere, milestones' own effects included, and the
+     * rest of each effect still plays. effectsEnabled switches all of it off.
+     */
+    public boolean effectParticles = true;
+    public boolean effectSounds = true;
+    public boolean effectFireworks = true;
+    public boolean effectTitles = true;
+    /** Every vote of a player who is online (and saved votes, when the player joins). */
+    public Effect effectVote = Effect.vote();
+    /** The day's first vote when it keeps a streak going (day 2 on); also streak rewards. */
+    public Effect effectStreak = Effect.streak();
+    /** A milestone is reached. */
+    public Effect effectMilestone = Effect.milestone();
+    /** Everyone online when a vote party starts. */
+    public Effect effectParty = Effect.party();
+    /** Goes with each vote reminder. */
+    public Effect effectReminder = Effect.reminder();
+    /** Effect settings that couldn't be used as written, one line each, for the console. */
+    public List<String> effectProblems = new ArrayList<String>();
+    /** Set by the core: false on proxies, which have no worlds, so the servers behind them play effects. */
+    public boolean effectsPlayable = true;
+
+    /** The kinds of effect switched off in config.yml ("particles", "sounds", "fireworks", "titles"). */
+    public List<String> effectKindsOff() {
+        List<String> off = new ArrayList<String>();
+        if (!effectParticles) off.add("particles");
+        if (!effectSounds) off.add("sounds");
+        if (!effectFireworks) off.add("fireworks");
+        if (!effectTitles) off.add("titles");
+        return off;
+    }
+
     // ── Misc ─────────────────────────────────────────────────────────
     public boolean updateCheckEnabled = true;
     /** GitHub "owner/repo" used by the update checker. */
@@ -143,7 +185,10 @@ public class DankVotesConfig {
         return offReason(command) == null;
     }
 
-    /** Whether a /dankvotes subcommand is on (setvotes/addvotes and reset need statistics, party the vote party). */
+    /**
+     * Whether a /dankvotes subcommand is on (setvotes/addvotes and reset need statistics, party
+     * the vote party, effect a server with worlds).
+     */
     public boolean subcommandEnabled(String subcommand) {
         return subcommandOffReason(subcommand) == null;
     }
@@ -163,6 +208,7 @@ public class DankVotesConfig {
         if (sub.equals("setvotes") || sub.equals("addvotes")) return !commandSetVotes ? "commands.setvotes: false" : statisticsOff();
         if (sub.equals("reset")) return !commandReset ? "commands.reset: false" : statisticsOff();
         if (sub.equals("party")) return !commandParty ? "commands.party: false" : votePartyOff();
+        if (sub.equals("effect")) return effectsPlayable ? null : "effects can't be shown on this server";
         return null;
     }
 
@@ -205,6 +251,152 @@ public class DankVotesConfig {
         public Type type = Type.EVERY;
         public int votes = 5;
         public List<RewardCommand> commands = new ArrayList<RewardCommand>();
+        /**
+         * This milestone's own effect: the trigger's effect (effects.milestone, or effects.streak
+         * for streak rewards) with the keys config.yml sets here. Null = that effect unchanged.
+         */
+        public Effect effect;
+
+        /** Whether reaching {@code value} (a vote count or a streak day) triggers it. */
+        public boolean reachedAt(int value) {
+            switch (type) {
+                case EVERY:
+                    return votes > 0 && value > 0 && value % votes == 0;
+                case AT:
+                    return value == votes;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    /**
+     * One vote effect: a particle animation, a sound, a firework and a title. Each trigger
+     * (vote, streak, milestone, vote party, reminder) has its own; milestones and streak
+     * rewards can change theirs.
+     */
+    public static class Effect {
+        public static final List<String> FIREWORK_TYPES = java.util.Collections.unmodifiableList(
+            java.util.Arrays.asList("BALL", "BALL_LARGE", "STAR", "BURST", "CREEPER"));
+
+        public boolean enabled = true;
+        /** The particle animation (see {@link EffectShapes#ANIMATIONS}); "none" draws nothing. */
+        public String animation = "none";
+        /** The particle it draws with ("" = the animation's own), by name from 1.20.5 on or an older one. */
+        public String particle = "";
+        /** Colours (0xRRGGBB) for DUST particles and fireworks; empty = white. */
+        public List<Integer> colors = new ArrayList<Integer>();
+        /** A sound key as /playsound takes it ("" = none). */
+        public String sound = "";
+        public float volume = 1.0f;
+        public float pitch = 1.0f;
+        public boolean firework = false;
+        /** BALL, BALL_LARGE, STAR, BURST or CREEPER. */
+        public String fireworkType = "BALL_LARGE";
+        /** Shown on the player's screen ("" = none); placeholders and & colour codes work. */
+        public String title = "";
+        public String subtitle = "";
+        /** Players within 32 blocks see the particles and hear the sound too (a real firework, on Bukkit servers: always). */
+        public boolean nearby = true;
+
+        public Effect copy() {
+            Effect e = new Effect();
+            e.enabled = enabled;
+            e.animation = animation;
+            e.particle = particle;
+            e.colors = new ArrayList<Integer>(colors);
+            e.sound = sound;
+            e.volume = volume;
+            e.pitch = pitch;
+            e.firework = firework;
+            e.fireworkType = fireworkType;
+            e.title = title;
+            e.subtitle = subtitle;
+            e.nearby = nearby;
+            return e;
+        }
+
+        /** A switched-off copy (an override of "effect: none"). */
+        public Effect off() {
+            Effect e = copy();
+            e.enabled = false;
+            return e;
+        }
+
+        /** True when it has nothing to show or play, whether or not it is enabled. */
+        public boolean isBlank() {
+            return EffectShapes.frames(animation) == 0 && Strings.isBlank(sound) && !firework
+                && Strings.isBlank(title) && Strings.isBlank(subtitle);
+        }
+
+        // The built-in effects. config.yml repeats these, so a missing key changes nothing.
+
+        public static Effect vote() {
+            Effect e = new Effect();
+            e.animation = "burst";
+            e.particle = "FIREWORK";
+            e.colors = colours(0xFF55FF, 0xAA00AA, 0xFFFFFF);
+            e.sound = "entity.player.levelup";
+            e.fireworkType = "BURST";
+            e.title = "&d&lTHANK YOU!";
+            e.subtitle = "&7for voting, &f%player%&7! Vote again tomorrow";
+            return e;
+        }
+
+        public static Effect streak() {
+            Effect e = new Effect();
+            e.animation = "tornado";
+            e.particle = "FLAME";
+            e.colors = colours(0xFFAA00, 0xFF5555, 0xFFFF55);
+            e.sound = "item.firecharge.use";
+            e.fireworkType = "BURST";
+            e.title = "&6&l%streak%-DAY STREAK!";
+            e.subtitle = "&7Vote again tomorrow to keep it going";
+            return e;
+        }
+
+        public static Effect milestone() {
+            Effect e = new Effect();
+            e.animation = "helix";
+            e.particle = "TOTEM_OF_UNDYING";
+            e.colors = colours(0xFFAA00, 0xFFFF55, 0xFFFFFF);
+            e.sound = "item.totem.use";
+            e.volume = 0.8f;
+            e.firework = true;
+            e.fireworkType = "BALL_LARGE";
+            e.title = "&6&lMILESTONE!";
+            e.subtitle = "&e%votes% votes &7- thank you, &f%player%&7!";
+            return e;
+        }
+
+        public static Effect party() {
+            Effect e = new Effect();
+            e.animation = "ring";
+            e.particle = "DUST";
+            e.colors = colours(0xFF5555, 0xFFAA00, 0xFFFF55, 0x55FF55, 0x55FFFF, 0xFF55FF);
+            e.sound = "ui.toast.challenge_complete";
+            e.firework = true;
+            e.fireworkType = "STAR";
+            e.title = "&d&lVOTE PARTY!";
+            e.subtitle = "&7Thanks to everyone who voted";
+            e.nearby = false;
+            return e;
+        }
+
+        public static Effect reminder() {
+            Effect e = new Effect();
+            e.animation = "none";
+            e.sound = "block.note_block.chime";
+            e.volume = 0.6f;
+            e.nearby = false;
+            return e;
+        }
+
+        private static List<Integer> colours(int... rgb) {
+            List<Integer> out = new ArrayList<Integer>();
+            for (int c : rgb) out.add(c);
+            return out;
+        }
     }
 
     /** A backend server that receives forwarded votes (its Votifier listener + v2 token). */

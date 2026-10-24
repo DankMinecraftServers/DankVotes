@@ -22,7 +22,7 @@ import java.util.List;
  * Loads on CraftBukkit, Spigot, Paper, Purpur, Pufferfish and other forks, hybrids such as
  * Mohist and Arclight, and Folia, from Minecraft 1.7.10 to the latest release. Receives votes
  * via outbound polling (no port forwarding), the inbound Votifier v1/v2 protocol, or an
- * existing NuVotifier install, then runs fully customizable in-game rewards.
+ * existing NuVotifier install, then runs fully customizable in-game rewards and vote effects.
  *
  * Commands run through the shared {@link CommandHandler}, so they behave exactly as on the
  * other platforms. Only /dankvotes is in plugin.yml; the player commands are registered at
@@ -31,6 +31,8 @@ import java.util.List;
 public class DankVotesPaper extends JavaPlugin implements Listener {
 
     private volatile DankVotesCore core;
+    /** Draws vote effects; kept across reloads, as it also guards the fireworks it launched. */
+    private BukkitEffects effects;
     private CommandHandler commands;
     private BukkitCommands playerCommands;
     private boolean nuVotifierHooked;
@@ -40,6 +42,13 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         DefaultConfig.saveIfMissing(getDataFolder(), DankVotesPaper.class, getLogger());
+        try {
+            BukkitEffects e = new BukkitEffects(this);
+            getServer().getPluginManager().registerEvents(e, this);
+            effects = e;
+        } catch (Throwable t) {
+            getLogger().warning("Vote effects are unavailable on this server: " + t);
+        }
         startCore();
         commands = new CommandHandler(
             new CommandHandler.CoreAccess() {
@@ -106,6 +115,7 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
             try { MetricsHook.stop(metrics); } catch (Throwable ignored) {}
             metrics = null;
         }
+        if (effects != null) effects.shutdown();
         if (scheduler != null) scheduler.cancelAll();
     }
 
@@ -120,7 +130,7 @@ public class DankVotesPaper extends JavaPlugin implements Listener {
 
     private void startCore() {
         DankVotesConfig config = PaperConfigLoader.load(getConfig());
-        DankVotesCore c = new DankVotesCore(new PaperPlatform(this), config);
+        DankVotesCore c = new DankVotesCore(new PaperPlatform(this, effects), config);
         c.start();
         core = c;
     }

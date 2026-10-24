@@ -2,7 +2,7 @@ name: DankVotes
 version: '${project.version}'
 main: com.dankmc.dankvotes.paper.DankVotesPaper
 author: DankMinecraftServers
-description: Vote rewards done right - polling (no port forwarding), Votifier v1/v2, NuVotifier hook, streaks, vote parties, reminders, leaderboards.
+description: Vote rewards done right - polling (no port forwarding), Votifier v1/v2, NuVotifier hook, streaks, vote parties, reminders, leaderboards, vote effects.
 website: https://dankminecraftservers.com
 
 # api-version 1.13 marks DankVotes as a modern (non-legacy) plugin on 1.13+ servers, so they
@@ -24,12 +24,12 @@ softdepend: [Votifier, PlaceholderAPI]
 commands:
   dankvotes:
     description: DankVotes admin commands
-    usage: /dankvotes <help|reload|status|test|setvotes|addvotes|reset|party|key|version>
+    usage: /dankvotes <help|reload|status|test|effect|setvotes|addvotes|reset|party|key|version>
     aliases: [dv, dankvote]
 
 permissions:
   dankvotes.admin:
-    description: Reload, status, test votes, edit vote counts, force parties, show the RSA key
+    description: Reload, status, test votes, preview effects, edit vote counts, force parties, show the RSA key
     default: op
   dankvotes.vote:
     description: Use /vote

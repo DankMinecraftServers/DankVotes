@@ -56,7 +56,7 @@ Needs JDK 17+ and Maven. The Paper half is compiled *to* Java 8 automatically.
 2. Update `CHANGELOG.md`.
 3. Commit, then tag and push:
    ```bash
-   git tag v1.2.0
+   git tag v1.3.0
    git push && git push --tags
    ```
 4. GitHub Actions builds the jar and publishes the release automatically (the workflow

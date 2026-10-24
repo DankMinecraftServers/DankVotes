@@ -52,6 +52,7 @@ public final class DankVotesSponge {
     private final Path configDir;
     private final java.util.logging.Logger logger;
     private final CommandHandler commands;
+    private final SpongeEffects effects;
     private volatile DankVotesCore core;
 
     @Inject
@@ -59,6 +60,7 @@ public final class DankVotesSponge {
         this.container = container;
         this.configDir = configDir;
         this.logger = bridgeLogger(container.logger());
+        this.effects = new SpongeEffects(container, logger);
         this.commands = new CommandHandler(
             new CommandHandler.CoreAccess() {
                 @Override public DankVotesCore core() { return DankVotesSponge.this.core; }
@@ -114,7 +116,7 @@ public final class DankVotesSponge {
     private synchronized void startCore() {
         File dataFolder = configDir.toFile();
         File file = DefaultConfig.saveIfMissing(dataFolder, DankVotesSponge.class, logger);
-        DankVotesCore c = new DankVotesCore(new SpongePlatform(container, logger, dataFolder), loadConfig(file));
+        DankVotesCore c = new DankVotesCore(new SpongePlatform(container, logger, dataFolder, effects), loadConfig(file));
         c.start();
         core = c;
     }

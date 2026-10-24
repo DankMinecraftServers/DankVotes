@@ -57,5 +57,6 @@ public class VoteReminder {
         if (storage.hasVotedToday(username)) return;
         if (platform.hasPermission(username, BYPASS_PERMISSION)) return;
         platform.messagePlayer(username, engine.applyPlayerPlaceholders(config.reminderMessage, username));
+        engine.getEffects().remind(username);
     }
 }

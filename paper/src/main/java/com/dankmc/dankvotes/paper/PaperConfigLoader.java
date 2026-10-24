@@ -6,6 +6,9 @@ import com.dankmc.dankvotes.core.DankVotesConfig.Messages;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Translates the Bukkit YAML config into the platform-agnostic DankVotesConfig POJO.
  * Every key has a sensible default so a partial/older config.yml still works. List entries
@@ -63,15 +66,21 @@ public final class PaperConfigLoader {
         // ── Vote links ───────────────────────────────────────────────
         c.voteLinks = ConfigMapper.voteLinks(yml.getList("vote-links"));
 
+        // ── Effects (before milestones, which can change them) ───────
+        // Read by the shared reader, from the section as a plain map, so every platform agrees.
+        Object effects = yml.get("effects");
+        ConfigMapper.effects(c, effects instanceof ConfigurationSection ? toMap((ConfigurationSection) effects) : effects);
+
         // ── Rewards ──────────────────────────────────────────────────
         c.rewards = ConfigMapper.rewards(yml.getList("rewards"));
-        c.milestones = ConfigMapper.milestones(yml.getList("milestones"));
+        c.milestones = ConfigMapper.milestones(yml.getList("milestones"), c.effectMilestone, "milestones", c.effectProblems);
 
         // ── Streaks ──────────────────────────────────────────────────
         c.streaksEnabled          = yml.getBoolean("streaks.enabled", c.streaksEnabled);
-        c.streakRewards           = ConfigMapper.milestones(yml.getList("streaks.rewards"));
+        c.streakRewards           = ConfigMapper.milestones(yml.getList("streaks.rewards"), c.effectStreak, "streaks.rewards", c.effectProblems);
         c.streakBroadcastEnabled  = yml.getBoolean("streaks.broadcast.enabled", c.streakBroadcastEnabled);
         c.streakBroadcastMessage  = yml.getString("streaks.broadcast.message", c.streakBroadcastMessage);
+        ConfigMapper.applyEffectKinds(c);   // now that milestones and streak rewards have their own effects
 
         // ── Vote party ───────────────────────────────────────────────
         c.votePartyEnabled         = yml.getBoolean("vote-party.enabled", c.votePartyEnabled);
@@ -124,6 +133,16 @@ public final class PaperConfigLoader {
         }
 
         return c;
+    }
+
+    /** A config section as the plain nested maps a YAML parser gives (lists of maps already are). */
+    static Map<String, Object> toMap(ConfigurationSection section) {
+        Map<String, Object> out = new LinkedHashMap<String, Object>();
+        for (String key : section.getKeys(false)) {
+            Object value = section.get(key);
+            out.put(key, value instanceof ConfigurationSection ? toMap((ConfigurationSection) value) : value);
+        }
+        return out;
     }
 
     private static String stripTrailingSlash(String s) {

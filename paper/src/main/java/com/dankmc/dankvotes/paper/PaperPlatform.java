@@ -1,5 +1,6 @@
 package com.dankmc.dankvotes.paper;
 
+import com.dankmc.dankvotes.core.EffectPlan;
 import com.dankmc.dankvotes.core.Platform;
 import com.dankmc.dankvotes.core.Vote;
 import org.bukkit.Bukkit;
@@ -22,16 +23,23 @@ import java.util.logging.Logger;
  * the Adventure Component API because 1.7-1.16 servers don't have it.
  *
  * Scheduling goes through {@link SchedulerAdapter}: Folia's region schedulers when present,
- * the classic BukkitScheduler otherwise.
+ * the classic BukkitScheduler otherwise. Vote effects are drawn by {@link BukkitEffects}.
  */
 public class PaperPlatform implements Platform {
 
     private final Plugin plugin;
     private final SchedulerAdapter scheduler;
+    private final BukkitEffects effects;
 
     public PaperPlatform(Plugin plugin) {
+        this(plugin, null);
+    }
+
+    /** @param effects draws vote effects; null for none */
+    PaperPlatform(Plugin plugin, BukkitEffects effects) {
         this.plugin = plugin;
         this.scheduler = new SchedulerAdapter(plugin);
+        this.effects = effects;
     }
 
     SchedulerAdapter getScheduler() { return scheduler; }
@@ -131,6 +139,16 @@ public class PaperPlatform implements Platform {
     public boolean hasPermission(String username, String permission) {
         Player p = Bukkit.getPlayerExact(username);
         return p != null && p.hasPermission(permission);
+    }
+
+    @Override
+    public boolean supportsEffects() {
+        return effects != null;
+    }
+
+    @Override
+    public boolean playEffect(String username, EffectPlan plan) {
+        return effects != null && effects.play(username, plan);
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.dankmc.dankvotes.sponge;
 
+import com.dankmc.dankvotes.core.EffectPlan;
 import com.dankmc.dankvotes.core.Platform;
 import com.dankmc.dankvotes.core.Version;
 import net.kyori.adventure.text.Component;
@@ -33,11 +34,18 @@ final class SpongePlatform implements Platform {
     private final PluginContainer container;
     private final Logger logger;
     private final File dataFolder;
+    private final SpongeEffects effects;
 
     SpongePlatform(PluginContainer container, Logger logger, File dataFolder) {
+        this(container, logger, dataFolder, null);
+    }
+
+    /** @param effects draws vote effects; null for none */
+    SpongePlatform(PluginContainer container, Logger logger, File dataFolder, SpongeEffects effects) {
         this.container = container;
         this.logger = logger;
         this.dataFolder = dataFolder;
+        this.effects = effects;
     }
 
     static Component component(String legacyText) {
@@ -135,10 +143,20 @@ final class SpongePlatform implements Platform {
         return p.isPresent() && p.get().hasPermission(permission);
     }
 
+    @Override
+    public boolean supportsEffects() {
+        return effects != null;
+    }
+
+    @Override
+    public boolean playEffect(String username, EffectPlan plan) {
+        return effects != null && effects.play(username, plan);
+    }
+
     @Override public String getPlatformName() { return "Sponge"; }
     @Override public String getPluginVersion() { return Version.get(); }
 
-    private static Optional<ServerPlayer> player(String username) {
+    static Optional<ServerPlayer> player(String username) {
         try {
             return Sponge.server().player(username);
         } catch (RuntimeException e) {

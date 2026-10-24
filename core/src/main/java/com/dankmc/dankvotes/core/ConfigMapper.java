@@ -75,17 +75,21 @@ public final class ConfigMapper {
         // ── Vote links ───────────────────────────────────────────────
         c.voteLinks = voteLinks(root.get("vote-links"));
 
+        // ── Effects (before milestones, which can change them) ───────
+        effects(c, root.get("effects"));
+
         // ── Rewards ──────────────────────────────────────────────────
         c.rewards    = rewards(root.get("rewards"));
-        c.milestones = milestones(root.get("milestones"));
+        c.milestones = milestones(root.get("milestones"), c.effectMilestone, "milestones", c.effectProblems);
 
         // ── Streaks ──────────────────────────────────────────────────
         Map<?, ?> streaks = section(root, "streaks");
         c.streaksEnabled         = bool(streaks, "enabled", c.streaksEnabled);
-        c.streakRewards          = milestones(streaks.get("rewards"));
+        c.streakRewards          = milestones(streaks.get("rewards"), c.effectStreak, "streaks.rewards", c.effectProblems);
         Map<?, ?> streakBroadcast = section(streaks, "broadcast");
         c.streakBroadcastEnabled = bool(streakBroadcast, "enabled", c.streakBroadcastEnabled);
         c.streakBroadcastMessage = str(streakBroadcast, "message", c.streakBroadcastMessage);
+        applyEffectKinds(c);   // now that milestones and streak rewards have their own effects
 
         // ── Vote party ───────────────────────────────────────────────
         Map<?, ?> party = section(root, "vote-party");
@@ -202,6 +206,14 @@ public final class ConfigMapper {
 
     /** Milestones and streak rewards: { type: EVERY|AT, votes|days: n, commands: [...] }. */
     public static List<DankVotesConfig.Milestone> milestones(Object raw) {
+        return milestones(raw, DankVotesConfig.Effect.milestone(), "milestones", new ArrayList<String>());
+    }
+
+    /**
+     * Milestones and streak rewards: { type: EVERY|AT, votes|days: n, commands: [...], effect: {...} }.
+     * An entry's effect is {@code base} (effects.milestone or effects.streak) with the keys it sets.
+     */
+    public static List<DankVotesConfig.Milestone> milestones(Object raw, DankVotesConfig.Effect base, String path, List<String> problems) {
         List<DankVotesConfig.Milestone> out = new ArrayList<DankVotesConfig.Milestone>();
         if (!(raw instanceof List)) return out;
         for (Object o : (List<?>) raw) {
@@ -214,9 +226,200 @@ public final class ConfigMapper {
             Object votes = map.get("votes") != null ? map.get("votes") : map.get("days");
             m.votes = toInt(votes, 5);
             m.commands = rewards(map.get("commands"));
+            if (map.get("effect") != null) {
+                // An entry's own effect plays even while the default one is switched off.
+                DankVotesConfig.Effect on = base.copy();
+                on.enabled = true;
+                m.effect = effect(map.get("effect"), on, path + " (" + m.type + " " + m.votes + ") effect", problems);
+            }
             out.add(m);
         }
         return out;
+    }
+
+    // ── effects ──────────────────────────────────────────────────────
+
+    private static final List<String> EFFECT_TRIGGERS = java.util.Arrays.asList(
+        "enabled", "particles", "sounds", "fireworks", "titles", "vote", "streak", "milestone", "vote-party", "party", "reminder");
+    private static final List<String> EFFECT_KEYS = java.util.Arrays.asList(
+        "enabled", "animation", "particle", "colors", "colours", "sound", "volume", "pitch",
+        "firework", "firework-type", "title", "subtitle", "nearby");
+
+    /**
+     * The effects section (a map, or just true/false). Effects are on unless config.yml says
+     * otherwise: a config.yml without the section (from before 1.3.0) gets the built-in effects,
+     * switched on. enabled: false switches every effect off; particles, sounds, fireworks or
+     * titles: false leaves just that kind out (see {@link #applyEffectKinds}).
+     */
+    public static void effects(DankVotesConfig c, Object raw) {
+        List<String> problems = c.effectProblems;
+        c.effectsConfigured = raw != null;
+        if (raw instanceof Boolean) {
+            c.effectsEnabled = (Boolean) raw;
+            return;
+        }
+        Boolean word = onOff(raw);
+        if (word != null) {
+            c.effectsEnabled = word;
+            return;
+        }
+        if (raw != null && !(raw instanceof Map)) problems.add("effects: expected settings, true/false or none - using the built-in effects.");
+        Map<?, ?> e = raw instanceof Map ? (Map<?, ?>) raw : Collections.emptyMap();
+        c.effectsEnabled  = onOffSetting(e, "enabled", true, "effects.enabled", problems);
+        c.effectParticles = onOffSetting(e, "particles", true, "effects.particles", problems);
+        c.effectSounds    = onOffSetting(e, "sounds", true, "effects.sounds", problems);
+        c.effectFireworks = onOffSetting(e, "fireworks", true, "effects.fireworks", problems);
+        c.effectTitles    = onOffSetting(e, "titles", true, "effects.titles", problems);
+        c.effectVote      = effect(e.get("vote"), DankVotesConfig.Effect.vote(), "effects.vote", problems);
+        c.effectStreak    = effect(e.get("streak"), DankVotesConfig.Effect.streak(), "effects.streak", problems);
+        c.effectMilestone = effect(e.get("milestone"), DankVotesConfig.Effect.milestone(), "effects.milestone", problems);
+        c.effectParty     = effect(e.get("vote-party") != null ? e.get("vote-party") : e.get("party"),
+                                   DankVotesConfig.Effect.party(), "effects.vote-party", problems);
+        c.effectReminder  = effect(e.get("reminder"), DankVotesConfig.Effect.reminder(), "effects.reminder", problems);
+        for (Object key : e.keySet()) {
+            if (!EFFECT_TRIGGERS.contains(String.valueOf(key))) {
+                problems.add("effects: unknown setting '" + key + "' (the switches are enabled, particles, sounds, fireworks and titles;"
+                    + " the effects are vote, streak, milestone, vote-party and reminder).");
+            }
+        }
+    }
+
+    /**
+     * effects.particles, sounds, fireworks and titles: false leaves that kind out of every effect,
+     * the milestones' and streak rewards' own included, so call it once the whole file is read.
+     * Applying it twice changes nothing.
+     */
+    public static void applyEffectKinds(DankVotesConfig c) {
+        List<DankVotesConfig.Effect> all = new ArrayList<DankVotesConfig.Effect>(java.util.Arrays.asList(
+            c.effectVote, c.effectStreak, c.effectMilestone, c.effectParty, c.effectReminder));
+        for (DankVotesConfig.Milestone m : c.milestones) all.add(m.effect);
+        for (DankVotesConfig.Milestone m : c.streakRewards) all.add(m.effect);
+        for (DankVotesConfig.Effect e : all) {
+            if (e == null) continue;
+            if (!c.effectParticles) e.animation = "none";
+            if (!c.effectSounds) e.sound = "";
+            if (!c.effectFireworks) e.firework = false;
+            if (!c.effectTitles) {
+                e.title = "";
+                e.subtitle = "";
+            }
+        }
+    }
+
+    /**
+     * One effect: settings over {@code base}, true (= base), or false / none (= off). Values
+     * that can't be used are reported in {@code problems} and the base value is kept.
+     */
+    public static DankVotesConfig.Effect effect(Object raw, DankVotesConfig.Effect base, String path, List<String> problems) {
+        if (raw == null) return base.copy();
+        if (raw instanceof Boolean) return (Boolean) raw ? base.copy() : base.off();
+        Boolean word = onOff(raw);
+        if (word != null) return word ? base.copy() : base.off();
+        if (!(raw instanceof Map)) {
+            problems.add(path + ": expected settings, true/false or none - using the default.");
+            return base.copy();
+        }
+        Map<?, ?> m = (Map<?, ?>) raw;
+        DankVotesConfig.Effect e = base.copy();
+        e.enabled = onOffSetting(m, "enabled", e.enabled, path + ".enabled", problems);
+        if (m.get("animation") != null) {
+            String a = EffectShapes.normalise(String.valueOf(m.get("animation")));
+            if (EffectShapes.exists(a)) e.animation = a;
+            else problems.add(path + ".animation: unknown animation '" + m.get("animation") + "' (use "
+                + join(EffectShapes.ANIMATIONS) + ").");
+        }
+        if (m.get("particle") != null) e.particle = String.valueOf(m.get("particle")).trim();
+        Object colours = m.get("colors") != null ? m.get("colors") : m.get("colours");
+        if (colours != null) e.colors = colours(colours, e.colors, path, problems);
+        // An empty value (sound:) keeps the default, as Bukkit drops such keys; "" means none.
+        if (m.get("sound") != null) e.sound = String.valueOf(m.get("sound")).trim();
+        if (m.get("volume") != null) e.volume = number(m.get("volume"), e.volume, 0f, 10f, path + ".volume", problems);
+        if (m.get("pitch") != null) e.pitch = number(m.get("pitch"), e.pitch, 0.5f, 2f, path + ".pitch", problems);
+        e.firework = onOffSetting(m, "firework", e.firework, path + ".firework", problems);
+        if (m.get("firework-type") != null) {
+            String type = String.valueOf(m.get("firework-type")).trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
+            if (DankVotesConfig.Effect.FIREWORK_TYPES.contains(type)) e.fireworkType = type;
+            else problems.add(path + ".firework-type: unknown type '" + m.get("firework-type") + "' (use "
+                + join(DankVotesConfig.Effect.FIREWORK_TYPES) + ").");
+        }
+        if (m.get("title") != null) e.title = String.valueOf(m.get("title"));
+        if (m.get("subtitle") != null) e.subtitle = String.valueOf(m.get("subtitle"));
+        e.nearby = onOffSetting(m, "nearby", e.nearby, path + ".nearby", problems);
+        for (Object key : m.keySet()) {
+            String k = String.valueOf(key);
+            if (!EFFECT_KEYS.contains(k)) problems.add(path + ": unknown setting '" + k + "'" + keyHint(k) + ".");
+        }
+        return e;
+    }
+
+    /**
+     * An on/off switch: true or false, or a word {@link #onOff} knows (a quoted "false" or "off"
+     * means off). Anything else is reported and {@code def} is used.
+     */
+    private static boolean onOffSetting(Map<?, ?> m, String key, boolean def, String path, List<String> problems) {
+        Object o = m.get(key);
+        if (o == null) return def;
+        if (o instanceof Boolean) return (Boolean) o;
+        Boolean word = onOff(o);
+        if (word != null) return word;
+        problems.add(path + ": expected true or false - using " + def + ".");
+        return def;
+    }
+
+    /** What an unknown key inside one effect was probably meant to be. */
+    private static String keyHint(String key) {
+        String k = key.toLowerCase(java.util.Locale.ROOT);
+        if (k.startsWith("particles")) return " (for no particles in this effect use animation: none; effects.particles: false leaves them out everywhere)";
+        if (k.equals("sounds")) return " (for no sound in this effect use sound: \"\"; effects.sounds: false leaves them out everywhere)";
+        if (k.equals("fireworks")) return " (did you mean firework? effects.fireworks: false leaves them out everywhere)";
+        if (k.equals("titles")) return " (for no title in this effect use title: \"\"; effects.titles: false leaves them out everywhere)";
+        return "";
+    }
+
+    /** "none", "off", "false", "disabled" or "" -> false; "on", "true", "default" -> true; anything else null. */
+    private static Boolean onOff(Object raw) {
+        if (!(raw instanceof String)) return null;
+        String word = ((String) raw).trim().toLowerCase(java.util.Locale.ROOT);
+        if (word.isEmpty() || word.equals("none") || word.equals("off") || word.equals("false") || word.equals("disabled")) return Boolean.FALSE;
+        if (word.equals("on") || word.equals("true") || word.equals("default")) return Boolean.TRUE;
+        return null;
+    }
+
+    /** colors: a list of names / #RRGGBB, or one string of them separated by commas. */
+    private static List<Integer> colours(Object raw, List<Integer> fallback, String path, List<String> problems) {
+        List<Object> items = new ArrayList<Object>();
+        if (raw instanceof List) items.addAll((List<?>) raw);
+        else for (String part : String.valueOf(raw).split("[,\\s]+")) if (!part.isEmpty()) items.add(part);
+        List<Integer> out = new ArrayList<Integer>();
+        for (Object item : items) {
+            Integer rgb = EffectNames.colour(item);
+            if (rgb != null) out.add(rgb);
+            else problems.add(path + ".colors: '" + item + "' is not a colour (use a name like pink or gold, or #RRGGBB).");
+        }
+        return out.isEmpty() && !items.isEmpty() ? new ArrayList<Integer>(fallback) : out;
+    }
+
+    private static float number(Object o, float def, float min, float max, String path, List<String> problems) {
+        double v;
+        if (o instanceof Number) v = ((Number) o).doubleValue();
+        else {
+            try { v = Double.parseDouble(String.valueOf(o).trim()); }
+            catch (NumberFormatException e) {
+                problems.add(path + ": expected a number, got '" + o + "'.");
+                return def;
+            }
+        }
+        if (Double.isNaN(v)) return def;
+        return (float) Math.max(min, Math.min(max, v));
+    }
+
+    private static String join(List<String> parts) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) sb.append(i == parts.size() - 1 ? " or " : ", ");
+            sb.append(parts.get(i));
+        }
+        return sb.toString();
     }
 
     // ── helpers ──────────────────────────────────────────────────────

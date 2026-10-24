@@ -11,7 +11,7 @@ and other forks, Sponge, Velocity **and** BungeeCord.
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.7.10%20→%20latest-brightgreen)](#compatibility)
 [![bStats Servers](https://img.shields.io/bstats/servers/34452?label=servers)](https://bstats.org/plugin/bukkit/DankVotes/34452)
 
-[Download](https://github.com/DankMinecraftServers/DankVotes/releases/latest) · [Quick start](#quick-start) · [Configuration](#configuration) · [Commands](#commands--permissions) · [Placeholders](#placeholderapi) · [Developer API](#developer-api)
+[Download](https://github.com/DankMinecraftServers/DankVotes/releases/latest) · [Quick start](#quick-start) · [Configuration](#configuration) · [Vote effects](#vote-effects) · [Commands](#commands--permissions) · [Placeholders](#placeholderapi) · [Developer API](#developer-api)
 
 </div>
 
@@ -19,7 +19,7 @@ and other forks, Sponge, Velocity **and** BungeeCord.
 
 DankVotes receives votes from vote sites and turns them into rewards — with everything a
 server owner expects out of the box: streaks, milestones, vote parties, offline queueing,
-reminders, a leaderboard, and a `/vote` command. It's a **drop-in replacement for
+reminders, a leaderboard, a `/vote` command, and vote effects that everyone nearby can see. It's a **drop-in replacement for
 NuVotifier** (it speaks Votifier v1 and v2) *and* it can work **without opening any
 ports** by polling [DankMinecraftServers.com](https://dankminecraftservers.com) over HTTPS.
 
@@ -30,13 +30,14 @@ ports** by polling [DankMinecraftServers.com](https://dankminecraftservers.com) 
 | **Three ways to receive votes** | HTTPS polling (no port forwarding), a built-in Votifier v1 + v2 listener (NuVotifier-compatible), or a hook into an existing NuVotifier install — use any combination |
 | **Network forwarding** | A Velocity or BungeeCord proxy passes every vote on to the servers behind it (Paper, Folia, Purpur, Sponge...), with a retry queue that survives restarts |
 | **Rewards** | Console commands per vote, with per-command **chance** and **permission** gates |
+| **Vote effects** | Particle animations, sounds, fireworks and titles for votes, streak days, milestones and vote parties — players nearby see them too. Each milestone can have its own |
 | **Milestones** | Rewards every *N* votes or at exactly *N* (`EVERY` / `AT`) |
 | **Streaks** | Consecutive-day streak tracking with streak rewards and best-streak records; streak rewards run once a day, however many sites a player votes on |
 | **Vote parties** | Server-wide goals with progress announcements; per-player and global rewards; progress survives restarts |
 | **Offline votes** | Queued and delivered on next join — milestones still trigger correctly. Or switch them off (`behaviour.offline-votes: false`) so only players who are online when their vote arrives count |
 | **Reminders** | Nudge players who haven't voted today (interval + on join, permission bypass) |
 | **Player commands** | `/vote`, `/votes`, `/votetop`, `/voteparty` |
-| **Use only what you need** | Switch off statistics, rewards, vote messages, reminders, vote parties or any single command. A part that is off registers no commands, so DankVotes runs next to another vote plugin without clashing |
+| **Use only what you need** | Switch off statistics, rewards, vote messages, reminders, vote parties, effects or any single command. A part that is off registers no commands, so DankVotes runs next to another vote plugin without clashing |
 | **Integrations** | PlaceholderAPI expansion, `DankVoteEvent` for other plugins, NuVotifier bridge, bStats |
 | **Safety** | Duplicate-vote protection across channels, verified-IP filtering, atomic data saves, update notifications |
 | **Runs everywhere** | Bukkit forks from 1.7.10 to the latest release, Folia (region schedulers, no "wrong thread" errors), Sponge, Velocity and BungeeCord — one jar, one config |
@@ -212,6 +213,8 @@ reminders:
   enabled: true
 vote-party:
   enabled: false        # /voteparty is only registered while this is true
+effects:
+  enabled: true         # particles, sounds, fireworks and titles for votes
 
 commands:               # false = not registered, the name stays free
   vote: true
@@ -237,8 +240,8 @@ commands:               # false = not registered, the name stays free
   backends have their own `/vote`, set `commands.vote: false` in the proxy's DankVotes.
 
 **Receive votes only, and pass them to another plugin.** Turn off `statistics`, `rewards`,
-`vote-messages`, `reminders.enabled` and the commands you don't want, and DankVotes only
-receives votes (polling needs no open port). Other plugins get each vote through
+`vote-messages`, `reminders.enabled`, `effects` and the commands you don't want, and DankVotes
+only receives votes (polling needs no open port). Other plugins get each vote through
 `DankVoteEvent` (see [Developer API](#developer-api)). Plugins that listen to NuVotifier
 instead get them through forwarding to this server's own NuVotifier:
 
@@ -253,6 +256,106 @@ forwarding:
       token: "the default token from plugins/Votifier/config.yml"
 ```
 
+## Vote effects
+
+Every vote is celebrated in-game: the voter feels it, and the players around them notice and
+think of voting too.
+
+| When | Default effect |
+|---|---|
+| A vote arrives (saved votes: a few seconds after the player joins) | Sparks burst out around the player, the level-up sound, a **THANK YOU!** title |
+| The day's first vote keeps a streak going (day 2 on) | A whirlwind of flames, **3-DAY STREAK!** — *Vote again tomorrow to keep it going* |
+| A milestone is reached | A totem helix, a firework and the totem sound, **MILESTONE!** — *25 votes* |
+| A vote party starts | Rainbow shockwaves and a firework for everyone online, **VOTE PARTY!** |
+| A vote reminder | A soft chime |
+
+One effect plays per vote: the biggest moment wins (a milestone's own effect over a default
+one, then a milestone over a streak day over a plain vote), and voting on several sites at once
+doesn't stack them. Players within 32 blocks who can see the voter see the effect too, and hear
+it if they're close; a vanished player's effect is theirs alone. Vote-party particles are each
+player's own, and fireworks go up at most once per 8×8 blocks a second, so a party in a crowded
+spawn stays smooth.
+
+**On by default, and easy to switch off** under `effects:` in `config.yml`:
+
+| Setting | Off means |
+|---|---|
+| `enabled: false` (or just `effects: false`) | No effects at all |
+| `particles: false` | No particle animations anywhere; sounds, fireworks and titles still play |
+| `sounds: false` / `fireworks: false` / `titles: false` | That kind is left out everywhere, the rest plays (a firework keeps its own bang) |
+| `enabled: false` under one effect (`vote`, `streak`, `milestone`, `vote-party`, `reminder`) | Just that effect |
+
+`/dankvotes reload` applies a change and `/dankvotes status` shows what's on. The kind switches
+also cover milestones' and streak rewards' own effects.
+
+Everything is set under `effects:` (keys you leave out keep their defaults):
+
+```yaml
+effects:
+  enabled: true                     # false: no effects at all
+  particles: true                   # false: no particle animations anywhere
+  sounds: true                      # false: no effect sounds
+  fireworks: true                   # false: no fireworks
+  titles: true                      # false: no titles or subtitles
+  vote:
+    enabled: true                   # false: no effect for plain votes
+    animation: burst                # burst, sparkle, helix, tornado, fountain, ring, halo, hearts, none
+    particle: FIREWORK              # "" = the animation's own; 1.20.5 names and older ones both work
+    colors: [pink, purple, white]   # for DUST particles and fireworks: names or #RRGGBB
+    sound: entity.player.levelup    # a /playsound key, "" for none
+    volume: 1.0
+    pitch: 1.0
+    firework: false                 # bursts in front of the player and never hurts anyone
+    title: "&d&lTHANK YOU!"         # placeholders work here
+    subtitle: "&7for voting, &f%player%&7! Vote again tomorrow"
+    nearby: true                    # players within 32 blocks see it too (and hear it if close)
+  streak: { ... }                   # the same keys for each of these
+  milestone: { ... }
+  vote-party: { ... }
+  reminder: { ... }
+```
+
+The full default section, with every effect, is in the
+[bundled config.yml](core/src/main/resources/com/dankmc/dankvotes/core/config.yml).
+
+**A milestone or streak reward can have its own effect.** The keys it sets replace the
+default's (`effects.milestone`, or `effects.streak` for streak rewards), and it plays even while
+that default is switched off; `effect: none` gives it no effect of its own, so the vote's usual
+effect plays:
+
+```yaml
+milestones:
+  - type: AT
+    votes: 100
+    effect:
+      animation: fountain
+      particle: DUST
+      colors: [gold, yellow, orange]
+      title: "&6&l100 VOTES!"
+      subtitle: "&7You're a legend, &f%player%&7 - enjoy VIP!"
+    commands:
+      - "lp user %player% parent add vip"
+```
+
+**Preview** an effect on yourself or another player, even one that is switched off:
+`/dankvotes effect <vote|streak|milestone|party|reminder> [player] [votes|days]`. A number picks
+a milestone or streak reward: `/dankvotes effect milestone Steve 100` plays the 100-vote
+milestone's own effect.
+
+**Where they work.** Bukkit-based servers from 1.7.10 to the latest, Folia included, and Sponge.
+A particle or sound a server version doesn't have (`TOTEM_OF_UNDYING` before 1.11, say) is
+swapped for a similar one, and the console says so once. Titles need Spigot's title API, which
+every 1.9+ server has (older servers skip them); fireworks burst in front of the player from 1.12
+(older ones fly their short course). On Paper and Folia the server sends each particle to the
+players who can see the voter, so a crowd costs little. On Sponge the firework is drawn with
+particles. Velocity and BungeeCord have no worlds, so the servers behind them play the effects,
+forwarded votes included.
+
+**Upgrading from 1.2.** A `config.yml` without an `effects:` section gets the defaults above,
+switched on, and the console says so at startup. To switch them off, add `effects: false`; to
+change them, copy the `effects:` section from the
+[bundled config.yml](core/src/main/resources/com/dankmc/dankvotes/core/config.yml).
+
 ## Commands & permissions
 
 | Command | Description | Permission | Default |
@@ -264,6 +367,7 @@ forwarding:
 | `/dankvotes reload` | Reload config | `dankvotes.admin` | op |
 | `/dankvotes status` | Connection & stats overview | `dankvotes.admin` | op |
 | `/dankvotes test <player>` | Simulate a vote | `dankvotes.admin` | op |
+| `/dankvotes effect <type> [player]` | Preview a vote effect | `dankvotes.admin` | op |
 | `/dankvotes setvotes\|addvotes <player> <n>` | Edit a vote count | `dankvotes.admin` | op |
 | `/dankvotes reset <player>` | Wipe a player's data | `dankvotes.admin` | op |
 | `/dankvotes party` | Force a vote party | `dankvotes.admin` | op |

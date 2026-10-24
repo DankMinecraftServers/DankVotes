@@ -115,6 +115,12 @@ public final class CommandText {
             + " &8| &7Vote messages: " + onOff(cfg.voteMessagesEnabled)
             + " &8| &7Reminders: " + onOff(cfg.reminderEnabled)
             + " &8| &7Vote party: " + onOff(cfg.votePartyEnabled));
+        if (cfg.effectsPlayable) {
+            List<String> playing = core.getEngine().getEffects().activeTriggers();
+            List<String> kindsOff = cfg.effectsEnabled ? cfg.effectKindsOff() : new ArrayList<String>();
+            out.add("&7Effects: " + (playing.isEmpty() ? "&7off" : "&aon &7(" + join(playing, ", ") + ")")
+                + (kindsOff.isEmpty() ? "" : " &8| &7without " + FeatureReview.join(kindsOff)));
+        }
         if (cfg.statisticsEnabled || cfg.rewardsEnabled) {
             String counts = cfg.statisticsEnabled
                 ? "&7Total votes: &f" + storage.getTotalVotes() + " &8| &7Players: &f" + storage.getPlayerCount()
@@ -166,6 +172,7 @@ public final class CommandText {
             subs.add("&f/dankvotes reload");
             subs.add("&fstatus");
             subs.add("&ftest <player>");
+            if (cfg.subcommandEnabled("effect")) subs.add("&feffect <type> [player]");
             if (cfg.subcommandEnabled("setvotes")) subs.add("&fsetvotes|addvotes <player> <n>");
             if (cfg.subcommandEnabled("reset")) subs.add("&freset <player>");
             if (cfg.subcommandEnabled("party")) subs.add("&fparty");

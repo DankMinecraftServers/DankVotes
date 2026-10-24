@@ -33,9 +33,15 @@ final class FeatureReview {
         if (bundled.messages.voteFooter.equals(c.messages.voteFooter)) c.messages.voteFooter = VOTE_FOOTER_WITHOUT_STATISTICS;
     }
 
+    /** Where vote effects are documented, for the log lines that point owners to them. */
+    static final String EFFECTS_DOCS = "https://github.com/DankMinecraftServers/DankVotes#vote-effects";
+
     /** Settings that can't do what they say with the current switches, one log line each. */
     static List<String> warnings(DankVotesConfig c) {
         List<String> out = new ArrayList<String>();
+        if (c.effectsPlayable) {
+            for (String problem : c.effectProblems) out.add(problem);
+        }
         if (!c.votePartyEnabled) {
             List<String> where = usedIn(c, PARTY_PLACEHOLDERS);
             if (!where.isEmpty()) {
@@ -56,6 +62,18 @@ final class FeatureReview {
         return out;
     }
 
+    /**
+     * For a config.yml from before 1.3.0 (no effects section): effects are on, how to see and
+     * change them, and how to switch them off. Null otherwise, and on proxies.
+     */
+    static String effectsNote(DankVotesConfig c) {
+        if (!c.effectsPlayable || c.effectsConfigured) return null;
+        return "New in this version: vote effects (particles, sounds, fireworks and titles) are on with their built-in "
+            + "settings. Try them with /dankvotes effect vote, and see " + EFFECTS_DOCS + " to change them. "
+            + "To switch them off, add effects: false to config.yml"
+            + (c.voteMessagesEnabled ? "." : " (features.vote-messages: false doesn't switch them off).");
+    }
+
     /** One line naming the parts that are off, or null when everything is on. */
     static String summary(DankVotesConfig c) {
         List<String> off = new ArrayList<String>();
@@ -63,10 +81,18 @@ final class FeatureReview {
         if (!c.rewardsEnabled) off.add("rewards");
         if (!c.voteMessagesEnabled) off.add("vote messages");
         if (!c.reminderEnabled) off.add("reminders");
+        boolean effectsOff = !c.effectsEnabled || !c.effectsPlayable;
+        if (!c.effectsEnabled && c.effectsPlayable && c.effectsConfigured) off.add("effects");
+        if (c.effectsEnabled && c.effectsPlayable) {
+            for (String kind : c.effectKindsOff()) off.add("effect " + kind);
+        }
         if (off.isEmpty()) return null;
-        if (off.size() == 4 && !c.votePartyEnabled) {
-            return "Statistics, rewards, vote messages, reminders and vote parties are all off: DankVotes only receives votes"
-                + (c.forwardingEnabled ? " and forwards them." : ".");
+        if (!c.statisticsEnabled && !c.rewardsEnabled && !c.voteMessagesEnabled && !c.reminderEnabled
+                && !c.votePartyEnabled && effectsOff) {
+            return (c.effectsPlayable
+                    ? "Statistics, rewards, vote messages, reminders, vote parties and effects are all off"
+                    : "Statistics, rewards, vote messages, reminders and vote parties are all off")
+                + ": DankVotes only receives votes" + (c.forwardingEnabled ? " and forwards them." : ".");
         }
         return "Turned off in config.yml: " + join(off) + ".";
     }
@@ -84,9 +110,21 @@ final class FeatureReview {
             where.add("the vote-party messages");
         }
         if (c.commandEnabled("vote") && contains(c.messages.voteFooter, placeholders)) where.add("messages.vote-footer");
+        if (c.effectsEnabled && c.effectsPlayable) {
+            if (showsText(c.effectVote, placeholders)) where.add("effects.vote");
+            if (c.streaksActive() && showsText(c.effectStreak, placeholders)) where.add("effects.streak");
+            if (c.statisticsEnabled && c.rewardsEnabled && showsText(c.effectMilestone, placeholders)) where.add("effects.milestone");
+            if (c.votePartyEnabled && showsText(c.effectParty, placeholders)) where.add("effects.vote-party");
+            if (c.reminderEnabled && showsText(c.effectReminder, placeholders)) where.add("effects.reminder");
+        }
         if (c.rewardsEnabled && contains(c.rewards, placeholders)) where.add("rewards");
         if (c.votePartyEnabled && contains(c.votePartyRewards, placeholders)) where.add("vote-party.rewards");
         return where;
+    }
+
+    /** Whether an effect that is on shows a title or subtitle with any of these placeholders. */
+    private static boolean showsText(DankVotesConfig.Effect e, String[] placeholders) {
+        return e != null && e.enabled && (contains(e.title, placeholders) || contains(e.subtitle, placeholders));
     }
 
     static boolean showsStatistics(String text) {

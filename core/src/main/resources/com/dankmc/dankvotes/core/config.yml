@@ -8,7 +8,7 @@
 #  Get listed:      https://dankminecraftservers.com
 #
 #  Colour codes: use & (e.g. &d = light purple, &7 = grey, &l = bold).
-#  Placeholders available in messages AND reward commands:
+#  Placeholders available in messages, effect titles AND reward commands:
 #    %player%  %service%  %votes%  %streak%  %best_streak%  %total_votes%
 #    %party_progress%  %party_goal%  %party_remaining%
 #  (%votes%, %streak%, %best_streak% and %total_votes% need features.statistics.)
@@ -90,8 +90,8 @@ features:
   rewards: true
   # The broadcast, thank-you and streak messages sent when someone votes.
   vote-messages: true
-  # Reminders and vote parties have their own switches further down:
-  # reminders.enabled and vote-party.enabled.
+  # Reminders, vote parties and effects have their own switches further down:
+  # reminders.enabled, vote-party.enabled and effects.enabled.
 
 # ── COMMANDS ─────────────────────────────────────────────────────────────────
 # A command set to false is never registered, so another plugin can have the name.
@@ -157,6 +157,10 @@ rewards:
 # ── MILESTONES (cumulative vote rewards per player) ──────────────────────────
 # type: EVERY -> runs every N votes (e.g. every 5th vote)
 # type: AT    -> runs once, when the player reaches exactly N votes
+# Reaching one plays effects.milestone (see EFFECTS below). A milestone can have its own
+# effect: the keys it sets replace those of effects.milestone, and it plays even while
+# effects.milestone is switched off. effect: none plays no milestone effect, so the vote's
+# usual effect plays instead.
 milestones:
   - type: EVERY
     votes: 5
@@ -165,6 +169,12 @@ milestones:
       - "broadcast &d%player% &7hit a &d%votes%-vote &7milestone!"
   - type: AT
     votes: 100
+    effect:
+      animation: fountain
+      particle: DUST
+      colors: [gold, yellow, orange]
+      title: "&6&l100 VOTES!"
+      subtitle: "&7You're a legend, &f%player%&7 - enjoy VIP!"
     commands:
       - "lp user %player% parent add vip"
       - "broadcast &6%player% &7reached &6100 votes &7and earned &6VIP&7!"
@@ -173,7 +183,7 @@ milestones:
 # A streak increases when a player votes on consecutive days and resets if they
 # miss a day. Streak rewards use the same EVERY / AT format, keyed on DAYS. They
 # run once a day, with the player's first vote that day, however many sites they
-# vote on (the streak broadcast too).
+# vote on (the streak broadcast too). Each can have its own effect, over effects.streak.
 streaks:
   enabled: true
   broadcast:
@@ -187,6 +197,10 @@ streaks:
         - "broadcast &d%player% &7kept a &d7-day &7vote streak!"
     - type: AT
       days: 30
+      effect:
+        firework: true
+        title: "&6&l30-DAY STREAK!"
+        subtitle: "&7A whole month of votes - thank you!"
       commands:
         - "give %player% netherite_ingot 1"
 
@@ -217,6 +231,110 @@ reminders:
   on-join: true
   on-join-delay-seconds: 10
   message: "&7You haven't voted today! Support the server with &d/vote &7and earn rewards."
+
+# ── EFFECTS (particles, sounds, fireworks and titles) ────────────────────────
+# Celebrate votes in-game. Players near the voter see and hear it too, which is
+# what gets them typing /vote. Works on Bukkit-based servers (1.7.10+) and Sponge;
+# a proxy has no worlds, so the servers behind it play the effects.
+# Try one on yourself: /dankvotes effect <vote|streak|milestone|party|reminder>
+#
+# On by default. To turn them off:
+#   enabled: false        every effect, all of it (or simply effects: false)
+#   particles: false      no particle animations anywhere; sounds, fireworks and
+#                         titles still play. Likewise sounds, fireworks, titles: false
+#                         (a firework keeps its own bang: fireworks: false for silence)
+#   enabled: false under one effect (vote, streak, ...) switches off just that one
+# /dankvotes reload applies a change; /dankvotes status shows what's on.
+#
+# What each effect can have (keys you leave out keep their built-in values):
+#   animation  burst, sparkle, helix, tornado, fountain, ring, halo, hearts or none
+#   particle   what the animation draws with ("" = its own). Names from 1.20.5 on
+#              (HAPPY_VILLAGER, FIREWORK, DUST, TOTEM_OF_UNDYING, END_ROD, FLAME, HEART,
+#              NOTE, WITCH...) and older ones (VILLAGER_HAPPY, REDSTONE...) both work. On an
+#              older server a particle it doesn't have is swapped for a similar one.
+#   colors     for DUST particles and fireworks: names (pink, purple, gold, aqua, lime...)
+#              or #RRGGBB
+#   sound      a sound key as /playsound takes it, "" for none; volume and pitch with it.
+#              Older servers play the nearest sound they have.
+#   firework   true launches a firework that bursts in front of the player (it never
+#              hurts anyone; at most one per 8x8 blocks a second, so a party in a crowded
+#              spawn stays smooth); firework-type: BALL, BALL_LARGE, STAR, BURST or CREEPER
+#   title      big text on the player's screen, with a subtitle ("" = none)
+#   nearby     true = players within 32 blocks who can see the player see it too, and
+#              hear it if they're close; false = only the player. A vanished player's
+#              effect is always theirs alone. (On Bukkit-based servers, players nearby see
+#              a firework either way.)
+#   enabled    false switches off just this effect (true by default)
+#
+# One effect plays per vote, the biggest moment winning: a milestone's own effect over a
+# default one, then a milestone over a streak day over a plain vote.
+effects:
+  enabled: true
+  particles: true
+  sounds: true
+  fireworks: true
+  titles: true
+
+  # Every vote from a player who is online (saved votes play when the player joins).
+  vote:
+    enabled: true
+    animation: burst
+    particle: FIREWORK
+    colors: [pink, purple, white]
+    sound: entity.player.levelup
+    volume: 1.0
+    pitch: 1.0
+    firework: false
+    title: "&d&lTHANK YOU!"
+    subtitle: "&7for voting, &f%player%&7! Vote again tomorrow"
+    nearby: true
+
+  # The day's first vote when it keeps a streak going (day 2 on), and streak rewards.
+  streak:
+    enabled: true
+    animation: tornado
+    particle: FLAME
+    sound: item.firecharge.use
+    title: "&6&l%streak%-DAY STREAK!"
+    subtitle: "&7Vote again tomorrow to keep it going"
+    nearby: true
+
+  # A milestone is reached (each milestone above can have its own).
+  milestone:
+    enabled: true
+    animation: helix
+    particle: TOTEM_OF_UNDYING
+    colors: [gold, yellow, white]
+    sound: item.totem.use
+    volume: 0.8
+    firework: true
+    firework-type: BALL_LARGE
+    title: "&6&lMILESTONE!"
+    subtitle: "&e%votes% votes &7- thank you, &f%player%&7!"
+    nearby: true
+
+  # Everyone online when a vote party starts.
+  vote-party:
+    enabled: true
+    animation: ring
+    particle: DUST
+    colors: [red, gold, yellow, lime, aqua, pink]
+    sound: ui.toast.challenge_complete
+    firework: true
+    firework-type: STAR
+    title: "&d&lVOTE PARTY!"
+    subtitle: "&7Thanks to everyone who voted"
+    nearby: false
+
+  # Goes with each vote reminder: a soft chime.
+  reminder:
+    enabled: true
+    animation: none
+    sound: block.note_block.chime
+    volume: 0.6
+    title: ""
+    subtitle: ""
+    nearby: false
 
 # ── MISC ─────────────────────────────────────────────────────────────────────
 update-check:

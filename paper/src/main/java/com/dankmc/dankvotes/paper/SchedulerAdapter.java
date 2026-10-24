@@ -1,6 +1,8 @@
 package com.dankmc.dankvotes.paper;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.Entity;
 import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.InvocationTargetException;
@@ -16,7 +18,8 @@ import java.util.logging.Level;
  *   <li>CraftBukkit, Spigot, Paper, Purpur, Pufferfish and the other forks (1.7.10 → 26.x):
  *       the classic {@code BukkitScheduler}.</li>
  *   <li>Folia and its forks: Folia has no main thread, so "sync" work runs on the global
- *       region scheduler and background work on its async scheduler.</li>
+ *       region scheduler, work on an entity (vote effects) on that entity's scheduler, and
+ *       background work on its async scheduler.</li>
  * </ul>
  *
  * Folia is detected up front by its {@code RegionizedServer} class. As a safety net for forks
@@ -114,6 +117,44 @@ final class SchedulerAdapter {
         }
     }
 
+    /**
+     * Run on the thread that owns {@code entity} after {@code delayTicks}: the main thread
+     * (Bukkit) or the entity's region, following it between regions (Folia; at least one
+     * tick). On Folia, {@code retired} (may be null) runs instead if the entity is removed
+     * first. Returns false if it can't be scheduled: the plugin is disabling, or on Folia the
+     * entity is gone.
+     */
+    boolean runAtEntity(Entity entity, Runnable task, Runnable retired, long delayTicks) {
+        if (!plugin.isEnabled()) return false;
+        Regionized r = regionized;
+        if (r != null) return r.runAtEntity(entity, task, retired, delayTicks);
+        try {
+            if (delayTicks <= 0) Bukkit.getScheduler().runTask(plugin, task);
+            else Bukkit.getScheduler().runTaskLater(plugin, task, delayTicks);
+            return true;
+        } catch (UnsupportedOperationException e) {
+            return switchToRegionized(e) && regionized.runAtEntity(entity, task, retired, delayTicks);
+        }
+    }
+
+    /**
+     * Whether the current thread may touch {@code location}: always on Bukkit (we're on the
+     * main thread); on Folia only the region owning it may.
+     */
+    boolean ownsLocation(Location location) {
+        Regionized r = regionized;
+        return r == null || r.ownsLocation(location);
+    }
+
+    /**
+     * Whether the current thread may touch {@code entity}: always on Bukkit; on Folia only the
+     * region owning it may (false when the server can't say).
+     */
+    boolean ownsEntity(Entity entity) {
+        Regionized r = regionized;
+        return r == null || r.ownsEntity(entity);
+    }
+
     /** Cancel everything this plugin scheduled (used on disable). */
     void cancelAll() {
         Regionized r = regionized;
@@ -169,6 +210,10 @@ final class SchedulerAdapter {
         private final Method asyncRunAtFixedRate; // AsyncScheduler#runAtFixedRate(Plugin, Consumer, long, long, TimeUnit)
         private final Method asyncCancelTasks;    // AsyncScheduler#cancelTasks(Plugin)
         private final Method taskCancel;          // ScheduledTask#cancel()
+        private final Method entityScheduler;     // Entity#getScheduler(), null if missing
+        private final Method entityExecute;       // EntityScheduler#execute(Plugin, Runnable, Runnable, long), null if missing
+        private final Method ownedByRegion;       // Bukkit#isOwnedByCurrentRegion(Location), null if missing
+        private final Method entityOwnedByRegion; // Bukkit#isOwnedByCurrentRegion(Entity), null if missing
 
         private Regionized(Plugin plugin, Object global, Object async, Method globalExecute, Method globalCancelTasks,
                            Method asyncRunNow, Method asyncRunDelayed, Method asyncRunAtFixedRate,
@@ -183,6 +228,33 @@ final class SchedulerAdapter {
             this.asyncRunAtFixedRate = asyncRunAtFixedRate;
             this.asyncCancelTasks = asyncCancelTasks;
             this.taskCancel = taskCancel;
+            // Only vote effects need these; a fork without them still schedules everything else.
+            Method scheduler = null;
+            Method execute = null;
+            try {
+                scheduler = Entity.class.getMethod("getScheduler");
+                execute = Class.forName(PKG + "EntityScheduler")
+                    .getMethod("execute", Plugin.class, Runnable.class, Runnable.class, long.class);
+            } catch (Throwable t) {
+                scheduler = null;
+                execute = null;
+            }
+            this.entityScheduler = scheduler;
+            this.entityExecute = execute;
+            Method owned;
+            try {
+                owned = Bukkit.class.getMethod("isOwnedByCurrentRegion", Location.class);
+            } catch (Throwable t) {
+                owned = null;
+            }
+            this.ownedByRegion = owned;
+            Method ownedEntity;
+            try {
+                ownedEntity = Bukkit.class.getMethod("isOwnedByCurrentRegion", Entity.class);
+            } catch (Throwable t) {
+                ownedEntity = null;
+            }
+            this.entityOwnedByRegion = ownedEntity;
         }
 
         /** Null when the server has no (or an incompatible) Folia scheduler API. */
@@ -224,6 +296,23 @@ final class SchedulerAdapter {
                 ? call(asyncRunNow, async, plugin, consumer(task))
                 : call(asyncRunDelayed, async, plugin, consumer(task), seconds, TimeUnit.SECONDS);
             return canceller(scheduled);
+        }
+
+        /** EntityScheduler#execute: runs on the entity's region, or {@code retired} runs once the entity is removed. */
+        boolean runAtEntity(Entity entity, Runnable task, Runnable retired, long delayTicks) {
+            if (entityScheduler == null || entityExecute == null) return false;
+            Object scheduler = call(entityScheduler, entity);
+            if (scheduler == null || scheduler == FAILED) return false;
+            return Boolean.TRUE.equals(call(entityExecute, scheduler, plugin, task, retired, Math.max(1L, delayTicks)));
+        }
+
+        boolean ownsLocation(Location location) {
+            if (ownedByRegion == null) return true;
+            return Boolean.TRUE.equals(call(ownedByRegion, null, location));
+        }
+
+        boolean ownsEntity(Entity entity) {
+            return entityOwnedByRegion != null && Boolean.TRUE.equals(call(entityOwnedByRegion, null, entity));
         }
 
         void cancelAll() {

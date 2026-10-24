@@ -99,6 +99,23 @@ public interface Platform {
         return null;
     }
 
+    /**
+     * Whether this platform can show vote effects (particles, sounds, fireworks, titles).
+     * False on proxies, which have no worlds: the servers behind them play the effects.
+     */
+    default boolean supportsEffects() {
+        return false;
+    }
+
+    /**
+     * Play a vote effect for a player who is online here, after the plan's delay. Starting
+     * one stops the effect that player is seeing. Safe to call from any thread. Returns false
+     * when the player isn't online here or it couldn't be scheduled.
+     */
+    default boolean playEffect(String username, EffectPlan plan) {
+        return false;
+    }
+
     /** Platform name for logging, e.g. "Paper", "Folia", "Velocity". */
     String getPlatformName();
 

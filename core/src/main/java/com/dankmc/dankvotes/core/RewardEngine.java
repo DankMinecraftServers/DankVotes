@@ -1,5 +1,6 @@
 package com.dankmc.dankvotes.core;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.concurrent.ThreadLocalRandom;
  *   - broadcast + thank-you messages
  *   - offline queueing (replay when the player next joins)
  *   - server-wide vote parties with persistent progress
+ *   - vote effects: particles, sounds, fireworks and titles (see {@link Effects})
  *
  * Statistics, rewards and vote messages can each be switched off (features.* in config.yml)
  * for servers that leave them to another plugin; the duplicate check, the event and
@@ -30,6 +32,7 @@ public class RewardEngine {
     private final Platform platform;
     private final DankVotesConfig config;
     private final VoteStorage storage;
+    private final Effects effects;
 
     /** Dedupe: "user|service" -> epoch millis of the last accepted vote. */
     private final Map<String, Long> recent = new ConcurrentHashMap<String, Long>();
@@ -50,10 +53,12 @@ public class RewardEngine {
         STOPPING
     }
 
+    @SuppressWarnings("this-escape") // Effects only keeps the reference, for placeholders later on
     public RewardEngine(Platform platform, DankVotesConfig config, VoteStorage storage) {
         this.platform = platform;
         this.config = config;
         this.storage = storage;
+        this.effects = new Effects(platform, config, this);
     }
 
     /**
@@ -156,14 +161,20 @@ public class RewardEngine {
             }
         }
 
+        Effects.Moment moment = null;
         if (config.rewardsEnabled && config.queueOfflineVotes && !platform.isPlayerOnline(vote.getUsername())) {
             storage.queueOfflineVote(counted);
             platform.getLogger().info("Player " + vote.getUsername() + " is offline - reward queued for next join.");
         } else {
-            deliverRewards(counted, newCount, streak, config.statisticsEnabled);
+            moment = deliverRewards(counted, newCount, streak, config.statisticsEnabled);
         }
 
+        // The effect's title takes the numbers the vote's messages showed, before the party
+        // count below moves on; it plays after the party, so a vote that starts one plays the
+        // party effect rather than both.
+        effects.prepare(moment);
         trackVoteParty();
+        effects.celebrate(moment, 0);
         return true;
     }
 
@@ -179,6 +190,8 @@ public class RewardEngine {
 
         platform.getLogger().info("Delivering " + queued.size() + " queued vote reward(s) to " + username);
         int streak = streakOf(username);
+        // One effect for all of them, the biggest, once the player has had time to load in.
+        Effects.Moment biggest = null;
         for (Vote v : queued) {
             // Use the count snapshot taken when the vote was queued so EVERY/AT milestones
             // trigger correctly even when several votes are replayed at once. A vote saved
@@ -187,8 +200,9 @@ public class RewardEngine {
             // Streak rewards follow the streak day saved with each vote (see deliverRewards).
             boolean counted = v.getVoteNumber() > 0;
             int count = !config.statisticsEnabled ? 0 : counted ? v.getVoteNumber() : votesOf(username);
-            deliverRewards(v, count, streak, counted);
+            biggest = Effects.bigger(biggest, deliverRewards(v, count, streak, counted));
         }
+        effects.celebrate(biggest, Effects.JOIN_DELAY_TICKS);
     }
 
     /** Manually trigger a vote party (admin command). */
@@ -198,22 +212,33 @@ public class RewardEngine {
 
     // ── Internal ─────────────────────────────────────────────────────
 
-    /** @param counted whether this vote was counted, i.e. {@code count} is the player's total including it */
-    private void deliverRewards(Vote vote, int count, int streak, boolean counted) {
+    /**
+     * Run a vote's rewards and send its thank-you. Returns the effect it earned (the biggest
+     * moment: a milestone, a streak day, or the vote itself) for the caller to play.
+     *
+     * @param counted whether this vote was counted, i.e. {@code count} is the player's total including it
+     */
+    private Effects.Moment deliverRewards(Vote vote, int count, int streak, boolean counted) {
+        Effects.Moment moment = effects.vote(vote, count, streak);
         if (config.rewardsEnabled) {
             deliverBaseRewards(vote, count, streak);
             // Milestones and streak rewards are keyed on the player's counted votes.
             if (config.statisticsEnabled && counted) {
-                deliverMilestones(config.milestones, count, vote, count, streak, "Milestone");
+                for (DankVotesConfig.Milestone m : deliverMilestones(config.milestones, count, vote, count, streak, "Milestone")) {
+                    moment = Effects.bigger(moment, effects.milestone(m, vote, count, streak));
+                }
                 // Streak rewards go with the vote that moved the streak: once a day, however many
                 // sites the player votes on, and for the day that vote reached.
                 int day = vote.getStreakDay();
                 if (config.streaksEnabled && day > 0) {
-                    deliverMilestones(config.streakRewards, day, vote, count, day, "Streak");
+                    for (DankVotesConfig.Milestone m : deliverMilestones(config.streakRewards, day, vote, count, day, "Streak")) {
+                        moment = Effects.bigger(moment, effects.streakReward(m, vote, count, day));
+                    }
                 }
             }
         }
         sendThankYou(vote, count, streak);
+        return moment;
     }
 
     private void deliverBaseRewards(Vote vote, int count, int streak) {
@@ -225,22 +250,16 @@ public class RewardEngine {
         }
     }
 
-    /** Evaluate EVERY/AT milestones against {@code value} (a vote count or a streak length). */
-    private void deliverMilestones(List<DankVotesConfig.Milestone> milestones, int value,
-                                   Vote vote, int count, int streak, String label) {
+    /**
+     * Evaluate EVERY/AT milestones against {@code value} (a vote count or a streak length) and
+     * run the commands of each one reached. Returns the ones reached, in config order.
+     */
+    private List<DankVotesConfig.Milestone> deliverMilestones(List<DankVotesConfig.Milestone> milestones, int value,
+                                                             Vote vote, int count, int streak, String label) {
+        List<DankVotesConfig.Milestone> reached = new ArrayList<DankVotesConfig.Milestone>();
         for (DankVotesConfig.Milestone m : milestones) {
-            boolean trigger = false;
-            switch (m.type) {
-                case EVERY:
-                    trigger = m.votes > 0 && value > 0 && value % m.votes == 0;
-                    break;
-                case AT:
-                    trigger = value == m.votes;
-                    break;
-                default:
-                    break;
-            }
-            if (trigger) {
+            if (m.reachedAt(value)) {
+                reached.add(m);
                 platform.getLogger().info(label + " hit for " + vote.getUsername() + ": " + m.type + " " + m.votes);
                 for (DankVotesConfig.RewardCommand rc : m.commands) {
                     if (!permitted(vote.getUsername(), rc)) continue;
@@ -250,6 +269,7 @@ public class RewardEngine {
                 }
             }
         }
+        return reached;
     }
 
     private void sendThankYou(Vote vote, int count, int streak) {
@@ -299,6 +319,7 @@ public class RewardEngine {
                 platform.dispatchConsoleCommand(applyPlaceholders(rc.command, null, 0, 0));
             }
         }
+        effects.party(online);
     }
 
     private boolean permitted(String username, DankVotesConfig.RewardCommand rc) {
@@ -411,6 +432,9 @@ public class RewardEngine {
     }
 
     void setForwarder(VoteForwarder forwarder) { this.forwarder = forwarder; }
+
+    /** Vote effects: what plays, for whom and when. */
+    public Effects getEffects() { return effects; }
 
     public int getVotePartyProgress() { return storage.getPartyProgress(); }
     public int getVotePartyGoal() { return config.votePartyGoal; }

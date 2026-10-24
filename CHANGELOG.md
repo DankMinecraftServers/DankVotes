@@ -3,6 +3,66 @@
 All notable changes to DankVotes are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] - 2026-10-23
+
+Votes you can see: particles, sounds, fireworks and titles.
+
+### Added
+- **Vote effects**, set under `effects:` in `config.yml` and on by default:
+  - every vote: sparks burst out around the player, the level-up sound and a **THANK YOU!**
+    title. Votes saved for an offline player play their effect a few seconds after they join;
+  - the day's first vote that keeps a streak going: a whirlwind of flames and
+    **3-DAY STREAK!** *Vote again tomorrow to keep it going*;
+  - milestones: a totem helix, a firework and the totem sound. Streak rewards use the streak
+    effect;
+  - vote parties: rainbow shockwaves and a firework for everyone online;
+  - reminders: a soft chime.
+
+  Players within 32 blocks who can see the voter see a vote's effect too, and hear it if
+  they're close; a vanished player's effect is theirs alone. One effect plays per vote, the
+  biggest moment winning (a milestone's own effect, then a milestone, a streak day, a plain
+  vote), and votes on several sites at once don't stack them.
+- For each effect: eight particle animations (`burst`, `sparkle`, `helix`, `tornado`,
+  `fountain`, `ring`, `halo`, `hearts`), any particle, colours for dust and fireworks, any sound
+  key with volume and pitch, a firework and its type, a title and subtitle (placeholders work),
+  and whether players nearby see it.
+- **Each milestone and streak reward can have its own effect** (`effect:` on the entry): the
+  keys it sets replace the default effect's, and it plays even while the default is switched
+  off. `effect: none` gives it none of its own.
+- **Switches**, all on by default: `effects.enabled: false` (or `effects: false`) turns every
+  effect off; `particles`, `sounds`, `fireworks` or `titles: false` leaves just that kind out
+  everywhere, milestones' own effects included; `enabled: false` under one effect switches off
+  only that one. A `config.yml` from 1.2 (no `effects:` section) gets them on, and the console
+  says how to switch them off.
+- `/dankvotes effect <vote|streak|milestone|party|reminder> [player] [votes|days]` previews an
+  effect, also one that is switched off. A number picks a milestone or streak reward.
+- `/dankvotes status` shows which effects are on and which kinds are left out. Mistakes in the
+  effects section (an unknown animation or colour, a misspelt key) are explained in the console
+  at startup.
+
+### Compatibility
+- Bukkit-based servers from 1.7.10 to the latest, Folia included. Particles use each version's
+  own API (Spigot's particle API on 1.7 and 1.8, the Particle API from 1.9), with dust colours in
+  that version's format and both the particle names from before and after 1.20.5. Sounds are
+  played by key under the name each version gives them (Sound became an interface in 1.21.3).
+  Titles need Spigot's title API (every 1.9+ server). A particle or sound a version doesn't
+  have is swapped for a similar one, and the console says so once. On Folia every effect runs
+  on the player's own region. On Paper and Folia the server sends each particle to the players
+  who can see the voter, so a crowd costs little.
+- Fireworks burst in front of the player, where they can see them (1.12+; older ones fly their
+  short course), never hurt anyone, and go up at most once per 8×8 blocks a second, so a vote
+  party in a crowded spawn stays smooth. Fireworks still in the air when DankVotes is disabled
+  are removed.
+- Sponge (API 8+): the same effects, with the firework drawn in particles.
+- Velocity and BungeeCord have no worlds: the servers behind them play the effects, forwarded
+  votes included.
+
+### Changed
+- A `config.yml` from an earlier version has no `effects:` section, so the effects are on with
+  their defaults, whatever `features.vote-messages` says; the console says so at startup. Add
+  `effects: false` to switch them off (DankVotes as a vote receiver next to another plugin).
+- Reminders come with a soft chime (`effects.reminder`; `enabled: false` under it silences it).
+
 ## [1.2.0] - 2026-10-02
 
 Use only the parts of DankVotes you want, next to any other vote plugin.

@@ -21,6 +21,7 @@ public class DankVotesCore {
     public DankVotesCore(Platform platform, DankVotesConfig config) {
         this.platform = platform;
         this.config = config;
+        config.effectsPlayable = platform.supportsEffects();
         FeatureReview.applyDefaults(config);
         this.storage = new VoteStorage(platform.getDataFolder());
         this.engine = new RewardEngine(platform, config, storage);
@@ -40,6 +41,8 @@ public class DankVotesCore {
             platform.getLogger().info("Votes from players who are offline are ignored (behaviour.offline-votes: false).");
         }
         for (String warning : FeatureReview.warnings(config)) platform.getLogger().warning(warning);
+        String effects = FeatureReview.effectsNote(config);
+        if (effects != null) platform.getLogger().info(effects);
 
         // Forwarding first, so no vote can arrive before it is ready to pass them on.
         forwarder.start();

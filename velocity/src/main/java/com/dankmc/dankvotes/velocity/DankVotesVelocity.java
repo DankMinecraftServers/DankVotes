@@ -45,7 +45,7 @@ import java.util.logging.LogRecord;
 @Plugin(
     id = "dankvotes",
     name = "DankVotes",
-    version = "1.2.0",
+    version = "1.3.0",
     description = "Vote rewards done right - polling, Votifier v1/v2, streaks, vote parties, reminders.",
     url = "https://dankminecraftservers.com",
     authors = {"DankMinecraftServers"}
